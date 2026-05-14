@@ -25,6 +25,10 @@ module.exports = (env = {}, argv = {}) => {
           test: /\.ts$/,
           exclude: /node_modules/,
           use: "ts-loader"
+        },
+        {
+          test: /\.wgsl$/,
+          type: "asset/source"
         }
       ]
     },
@@ -38,7 +42,7 @@ module.exports = (env = {}, argv = {}) => {
         directory: path.resolve(__dirname, "dist")
       },
       host: "0.0.0.0",
-      port: 8080,
+      port: 8000,
       open: false,
       hot: true
     }

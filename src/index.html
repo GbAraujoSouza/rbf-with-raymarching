@@ -8,8 +8,12 @@
       :root {
         color-scheme: dark;
         font-family: "Segoe UI", sans-serif;
-        background:
-          radial-gradient(circle at top, #19465e 0%, #0b1722 42%, #05080d 100%);
+        background: radial-gradient(
+          circle at top,
+          #19465e 0%,
+          #0b1722 42%,
+          #05080d 100%
+        );
       }
 
       * {
@@ -66,9 +70,9 @@
       }
 
       #gpu-canvas {
-        width: 100%;
+        width: 512px;
+        height: 512px;
         margin-top: 24px;
-        aspect-ratio: 16 / 9;
         border-radius: 16px;
         border: 1px solid rgba(173, 216, 255, 0.12);
         background: rgba(255, 255, 255, 0.03);
@@ -79,12 +83,9 @@
   <body>
     <main class="app-shell">
       <section class="panel">
-        <p class="eyebrow">WebGPU + TypeScript + webpack</p>
-        <h1>Minimal starter for browser experiments</h1>
-        <p>
-          This starter requests a WebGPU device and clears the canvas with a color so you
-          can confirm the pipeline works locally and after deployment.
-        </p>
+        <h1>WebGPU</h1>
+        <p>Pequeno Texto</p>
+
         <p id="status" aria-live="polite"></p>
         <canvas id="gpu-canvas"></canvas>
       </section>
