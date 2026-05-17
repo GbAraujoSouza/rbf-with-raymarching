@@ -16,6 +16,11 @@ const setStatus = (message: string) => {
   liveStatus.textContent = message;
 };
 
+/**
+ * Keeps the WebGPU drawing buffer in sync with the canvas' displayed size.
+ * The resize uses device pixels so rendering stays sharp on high-DPI screens
+ * and avoids redundant writes when the backing buffer is already correct.
+ */
 const resizeCanvas = () => {
   const devicePixelRatio = window.devicePixelRatio || 1;
   const width = Math.max(
@@ -56,26 +61,27 @@ async function initWebGpu() {
     return;
   }
 
-  const format = navigator.gpu.getPreferredCanvasFormat();
+  const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 
   const configure = () => {
     resizeCanvas();
     context.configure({
       alphaMode: "opaque",
       device,
-      format,
+      format: presentationFormat,
     });
   };
 
   configure();
   window.addEventListener("resize", configure);
 
+  // Define constants to render game of life
   const GRID_SIZE = 16;
-
   const UPDATE_INTERVAL = 300; // in ms
   let step = 0; // simulation step counter
-
   const WORKGROUP_SIZE = 8;
+
+  // Define (x, y) vertices of a square (2 triangles)
   const vertices = new Float32Array([
     -0.4, -0.4, 0.4, -0.4, 0.4, 0.4,
 
@@ -99,6 +105,9 @@ async function initWebGpu() {
       } as GPUVertexAttribute,
     ],
   };
+
+  // create the shader module with VERTEX and FRAGMENT shader
+  // The code is imported from shaders/cell.wgsl
   const cellShaderModule = device.createShaderModule({
     label: "cell_shader",
     code: cellShaderCode,
@@ -106,24 +115,43 @@ async function initWebGpu() {
 
   const computeShaderModule = device.createShaderModule({
     label: "simulation_compute_shader",
-    code: `
+    code: /* wgsl */ `
         @group(0) @binding(0) var<uniform> grid: vec2f;
 
         @group(0) @binding(1) var<storage, read> cellStateIn: array<u32>;
         @group(0) @binding(2) var<storage, read_write> cellStateOut: array<u32>;
 
         fn getCellIndex(cell: vec2u) -> u32 {
-            return cell.y * u32(grid.x) + cell.x;
+            return (cell.y % u32(grid.y)) * u32(grid.x) + (cell.x % u32(grid.x));
+        }
+
+        fn isCellActive(x: u32, y: u32) -> u32{
+            return cellStateIn[ getCellIndex(vec2u(x, y)) ];
         }
 
         @compute
         @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
         fn computeMain(@builtin(global_invocation_id) cell: vec3u) {
-            // flip the cell cell state
-            if (cellStateIn[ getCellIndex(cell.xy) ] == 1) {
-                cellStateOut[ getCellIndex(cell.xy) ] = 0;
-            } else {
-                cellStateOut[ getCellIndex(cell.xy) ] = 1;
+            let activeNeighbors = isCellActive(cell.x+1, cell.y+1) +
+                                isCellActive(cell.x+1, cell.y) +
+                                isCellActive(cell.x+1, cell.y-1) +
+                                isCellActive(cell.x, cell.y-1) +
+                                isCellActive(cell.x-1, cell.y-1) +
+                                isCellActive(cell.x-1, cell.y) +
+                                isCellActive(cell.x-1, cell.y+1) +
+                                isCellActive(cell.x, cell.y+1);
+
+            let i = getCellIndex(cell.xy);
+            switch activeNeighbors {
+                case 2: {
+                    cellStateOut[i] = cellStateIn[i]; 
+                }
+                case 3: {
+                    cellStateOut[i] = 1;
+                }
+                default: {
+                    cellStateOut[i] = 0;
+                }
             }
         } 
     `,
@@ -153,8 +181,8 @@ async function initWebGpu() {
     }),
   ];
   // populate array
-  for (let i = 0; i < cellStateArrayA.length; i += 3) {
-    cellStateArrayA[i] = 1;
+  for (let i = 0; i < cellStateArrayA.length; ++i) {
+    cellStateArrayA[i] = Math.random() > 0.6 ? 1 : 0;
   }
   device.queue.writeBuffer(cellStateStorage[0], 0, cellStateArrayA);
 
@@ -243,7 +271,7 @@ async function initWebGpu() {
     fragment: {
       module: cellShaderModule,
       entryPoint: "fragmentMain",
-      targets: [{ format: format }],
+      targets: [{ format: presentationFormat }],
     },
   });
 
