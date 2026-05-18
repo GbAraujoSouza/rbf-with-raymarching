@@ -14,17 +14,17 @@ struct VertexOutput {
 
 @vertex
 fn vertexMain(input: VertexInput) -> VertexOutput {
-        let i = f32(input.instance);
-        let cell = vec2f(i % grid.x, floor(i / grid.x));
-        let cellOffset = cell / grid * 2;
-        let state = f32(cellState[input.instance]);
+    let i = f32(input.instance);
+    let cell = vec2f(i % grid.x, floor(i / grid.x));
+    let cellOffset = cell / grid * 2;
+    let state = f32(cellState[input.instance]);
 
-        let gridPos = (input.aPos * state + 1) / grid - 1 + cellOffset;
+    let gridPos = (input.aPos * state + 1) / grid - 1 + cellOffset;
 
-        var output: VertexOutput;
-        output.aPos = vec4f(gridPos, 0, 1);
-        output.cell = cell;
-        return output;
+    var output: VertexOutput;
+    output.aPos = vec4f(gridPos, 0, 1);
+    output.cell = cell;
+    return output;
 }
 
 struct FragmentInput {
