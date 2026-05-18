@@ -1,3 +1,4 @@
+import "./styles.css";
 import cellShaderCode from "./shaders/cell.wgsl";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#gpu-canvas");
