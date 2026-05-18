@@ -1,38 +1,22 @@
 struct VertexInput {
-    @location(0) aPos: vec2f,
-    @builtin(instance_index) instance: u32,
+    @location(0) aPos: vec3f,
+    @location(1) color: vec3f,
 }
 
-struct VertexOutput {
-    @builtin(position) aPos: vec4f,
-    @location(0) cell: vec2f,
+struct FragmentData {
+    @builtin(position) position: vec4f,
+    @location(0) color: vec4f,
 }
-
-
-@group(0) @binding(0) var<uniform> grid: vec2f;
-@group(0) @binding(1) var<storage> cellState: array<u32>;
 
 @vertex
-fn vertexMain(input: VertexInput) -> VertexOutput {
-    let i = f32(input.instance);
-    let cell = vec2f(i % grid.x, floor(i / grid.x));
-    let cellOffset = cell / grid * 2;
-    let state = f32(cellState[input.instance]);
-
-    let gridPos = (input.aPos * state + 1) / grid - 1 + cellOffset;
-
-    var output: VertexOutput;
-    output.aPos = vec4f(gridPos, 0, 1);
-    output.cell = cell;
-    return output;
-}
-
-struct FragmentInput {
-    @location(0) cell: vec2f,
+fn vertexMain(input: VertexInput) -> FragmentData {
+    var fragData: FragmentData;
+    fragData.position = vec4f(input.aPos, 1.0);
+    fragData.color = vec4f(input.color, 1.0);
+    return fragData;
 }
 
 @fragment
-fn fragmentMain(input: FragmentInput) -> @location(0) vec4f {
-    let c = input.cell/grid;
-    return vec4f(c, 1-c.x, 1);
+fn fragmentMain(input: FragmentData) -> @location(0) vec4f {
+    return input.color;
 }
