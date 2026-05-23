@@ -1,6 +1,9 @@
-import { glMatrix, mat4 } from "gl-matrix";
-import shader from "./shaders/cell.wgsl";
-import { TriangularMesh } from "./triangular_mesh";
+import { vec3 } from "gl-matrix";
+import {
+    createBuiltInRbfFit,
+    type RbfFitResult,
+} from "./rbf";
+import shader from "./shaders/rbf_raymarch.wgsl";
 
 export class Renderer {
     canvas: HTMLCanvasElement;
@@ -14,10 +17,23 @@ export class Renderer {
     pipeline!: GPURenderPipeline;
 
     uniformBuffer!: GPUBuffer;
-    t: number = 0;
+    positionsBuffer!: GPUBuffer;
+    weightsBuffer!: GPUBuffer;
 
-    // assets
-    triangularMesh!: TriangularMesh;
+    rbfFit!: RbfFitResult;
+
+    yaw = 0.7;
+    pitch = 0.5;
+    radius = 4.2;
+    readonly target = vec3.fromValues(0, 0, 0);
+    readonly fieldOfView = Math.PI / 4;
+    readonly maxDistance = 20;
+    readonly epsilon = 1e-3;
+    readonly showDebugPoints = 1;
+
+    isPointerDown = false;
+    lastPointerX = 0;
+    lastPointerY = 0;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -29,6 +45,7 @@ export class Renderer {
         this.createAssets();
 
         await this.makePipeline();
+        this.setupInteraction();
 
         const observer = new ResizeObserver((entries) => {
             for (const entry of entries) {
@@ -89,7 +106,7 @@ export class Renderer {
 
     async makePipeline() {
         this.uniformBuffer = this.device.createBuffer({
-            size: 3 * 64,
+            size: 8 * 16,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -97,8 +114,18 @@ export class Renderer {
             entries: [
                 {
                     binding: 0,
-                    visibility: GPUShaderStage.VERTEX,
+                    visibility: GPUShaderStage.FRAGMENT,
                     buffer: {},
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: { type: "read-only-storage" },
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    buffer: { type: "read-only-storage" },
                 },
             ],
         });
@@ -109,6 +136,18 @@ export class Renderer {
                     binding: 0,
                     resource: {
                         buffer: this.uniformBuffer,
+                    },
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: this.positionsBuffer,
+                    },
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: this.weightsBuffer,
                     },
                 },
             ],
@@ -129,7 +168,6 @@ export class Renderer {
             vertex: {
                 module: shaderModule,
                 entryPoint: "vertexMain",
-                buffers: [this.triangularMesh.bufferLayout],
             },
 
             fragment: {
@@ -145,42 +183,22 @@ export class Renderer {
     }
 
     createAssets() {
-        this.triangularMesh = new TriangularMesh(this.device);
+        this.rbfFit = createBuiltInRbfFit();
+        this.positionsBuffer = this.device.createBuffer({
+            size: this.rbfFit.positions.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        this.weightsBuffer = this.device.createBuffer({
+            size: this.rbfFit.weights.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+
+        this.device.queue.writeBuffer(this.positionsBuffer, 0, this.rbfFit.positions);
+        this.device.queue.writeBuffer(this.weightsBuffer, 0, this.rbfFit.weights);
     }
 
     render = () => {
-        this.t += 1;
-
-        const projection = mat4.create();
-        mat4.perspectiveZO(
-            projection,
-            glMatrix.toRadian(45),
-            800 / 600,
-            0.1,
-            100,
-        );
-
-        const view = mat4.create();
-        mat4.lookAt(view, [0, 2, -2], [0, 0, 0], [0, 1, 0]);
-
-        const model = mat4.create();
-        mat4.rotate(model, model, glMatrix.toRadian(this.t), [0, 1, 0]);
-
-        this.device.queue.writeBuffer(
-            this.uniformBuffer,
-            0,
-            <ArrayBuffer>(<unknown>model),
-        );
-        this.device.queue.writeBuffer(
-            this.uniformBuffer,
-            64 * 1,
-            <ArrayBuffer>(<unknown>view),
-        );
-        this.device.queue.writeBuffer(
-            this.uniformBuffer,
-            64 * 2,
-            <ArrayBuffer>(<unknown>projection),
-        );
+        this.updateSceneUniforms();
 
         const encoder = this.device.createCommandEncoder();
 
@@ -198,12 +216,8 @@ export class Renderer {
 
         // draw stuff
         pass.setPipeline(this.pipeline);
-
         pass.setBindGroup(0, this.bindGroup);
-
-        pass.setVertexBuffer(0, this.triangularMesh.buffer);
-
-        pass.draw(this.triangularMesh.vertices.length / 6);
+        pass.draw(3);
 
         pass.end();
         const commandBuffer = encoder.finish();
@@ -211,4 +225,104 @@ export class Renderer {
 
         requestAnimationFrame(this.render);
     };
+
+    updateSceneUniforms() {
+        const eye = vec3.fromValues(
+            this.radius * Math.cos(this.pitch) * Math.sin(this.yaw),
+            this.radius * Math.sin(this.pitch),
+            this.radius * Math.cos(this.pitch) * Math.cos(this.yaw),
+        );
+        const forward = vec3.create();
+        vec3.subtract(forward, this.target, eye);
+        vec3.normalize(forward, forward);
+
+        const worldUp = vec3.fromValues(0, 1, 0);
+        const right = vec3.create();
+        vec3.cross(right, forward, worldUp);
+        vec3.normalize(right, right);
+
+        const up = vec3.create();
+        vec3.cross(up, right, forward);
+        vec3.normalize(up, up);
+
+        const uniformData = new Float32Array(8 * 4);
+        uniformData.set(
+            [
+                this.canvas.width,
+                this.canvas.height,
+                this.rbfFit.weights.length,
+                this.showDebugPoints,
+            ],
+            0,
+        );
+        uniformData.set([eye[0], eye[1], eye[2], 0], 4);
+        uniformData.set([forward[0], forward[1], forward[2], 0], 8);
+        uniformData.set([right[0], right[1], right[2], 0], 12);
+        uniformData.set([up[0], up[1], up[2], 0], 16);
+        uniformData.set(
+            [
+                this.rbfFit.correctionPower,
+                this.rbfFit.correctionLinear,
+                this.maxDistance,
+                this.epsilon,
+            ],
+            20,
+        );
+        uniformData.set(
+            [
+                this.rbfFit.kernelSigma,
+                this.rbfFit.pointRadius,
+                this.fieldOfView,
+                0,
+            ],
+            24,
+        );
+        uniformData.set([10, 10, 10, 0], 28);
+
+        this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+    }
+
+    setupInteraction() {
+        this.canvas.addEventListener("pointerdown", (event) => {
+            this.isPointerDown = true;
+            this.lastPointerX = event.clientX;
+            this.lastPointerY = event.clientY;
+            this.canvas.setPointerCapture(event.pointerId);
+        });
+
+        this.canvas.addEventListener("pointermove", (event) => {
+            if (!this.isPointerDown) {
+                return;
+            }
+
+            const deltaX = event.clientX - this.lastPointerX;
+            const deltaY = event.clientY - this.lastPointerY;
+            const rotationSpeed = 0.01;
+
+            this.yaw -= deltaX * rotationSpeed;
+            this.pitch = clamp(
+                this.pitch - deltaY * rotationSpeed,
+                -1.45,
+                1.45,
+            );
+
+            this.lastPointerX = event.clientX;
+            this.lastPointerY = event.clientY;
+        });
+
+        const releasePointer = (event: PointerEvent) => {
+            this.isPointerDown = false;
+            if (this.canvas.hasPointerCapture(event.pointerId)) {
+                this.canvas.releasePointerCapture(event.pointerId);
+            }
+        };
+
+        this.canvas.addEventListener("pointerup", releasePointer);
+        this.canvas.addEventListener("pointerleave", releasePointer);
+        this.canvas.addEventListener("pointercancel", releasePointer);
+    }
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), max);
 }
