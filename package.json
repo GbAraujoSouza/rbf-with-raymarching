@@ -4,9 +4,11 @@
   "private": true,
   "description": "Minimal WebGPU starter with TypeScript and webpack.",
   "scripts": {
+    "start": "npm run build && npm run serve",
     "dev": "webpack serve --mode development",
-    "build": "webpack --mode production",
-    "typecheck": "tsc --noEmit"
+    "build": "webpack --config webpack.config.js",
+    "typecheck": "tsc --noEmit",
+    "serve": "live-server dist --cors"
   },
   "engines": {
     "node": ">=22"
@@ -15,6 +17,7 @@
     "@webgpu/types": "^0.1.64",
     "css-loader": "^7.1.2",
     "html-webpack-plugin": "^5.6.4",
+    "live-server": "^1.2.2",
     "style-loader": "^4.0.0",
     "ts-loader": "^9.5.4",
     "typescript": "^5.8.3",

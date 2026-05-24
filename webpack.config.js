@@ -38,7 +38,7 @@ module.exports = (env = {}, argv = {}) => {
     },
     plugins: [
       new HtmlWebpackPlugin({
-        template: "./src/index.html"
+        template: "./index.html"
       })
     ],
     devServer: {
@@ -46,7 +46,7 @@ module.exports = (env = {}, argv = {}) => {
         directory: path.resolve(__dirname, "dist")
       },
       host: "0.0.0.0",
-      port: 8000,
+      port: 8080,
       open: false,
       hot: true
     }
