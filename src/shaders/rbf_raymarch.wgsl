@@ -43,9 +43,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     return output;
 }
 
-fn gaussianKernel(radius: f32) -> f32 {
-    let sigma = uniforms.rbfParams.x;
-    let scaled = sigma * radius;
+fn gaussian(radius: f32) -> f32 {
+    let epsilon = uniforms.rbfParams.x;
+    let scaled = epsilon * radius;
     return exp(-(scaled * scaled));
 }
 
@@ -56,7 +56,7 @@ fn rbfField(point: vec3f) -> f32 {
     for (var index = 0; index < sampleCount; index += 1) {
         let center = samplePositions.values[index].xyz;
         let weight = sampleWeights.values[index];
-        total += gaussianKernel(distance(point, center)) * weight;
+        total += gaussian(distance(point, center)) * weight;
     }
 
     return total;
@@ -95,13 +95,26 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
         let fieldValue = sceneSdf(point, usePoints);
         let distanceToSurface = abs(fieldValue);
 
-        if (distanceToSurface < epsilon) {
-            return depth;
+        if (usePoints) {
+            if (distanceToSurface < epsilon) {
+                return depth;
+            }
+        } else {
+            if (fieldValue < 0.0 && length(point) < 2) {
+                return depth;
+            }
         }
 
         var stepDistance = distanceToSurface;
         if (!usePoints) {
+
+            // make the correcion to the step
             stepDistance = correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
+            
+            let distToBounding = length(point) - 2;
+            if (distToBounding > 0.0) {
+                stepDistance = max(stepDistance, distToBounding);
+            }
         }
 
         depth += max(stepDistance, epsilon);

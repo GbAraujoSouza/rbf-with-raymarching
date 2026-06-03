@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.64",
+    "@types/numeric": "^1.2.3",
     "css-loader": "^7.1.2",
     "html-webpack-plugin": "^5.6.4",
     "style-loader": "^4.0.0",
@@ -23,6 +24,7 @@
     "webpack-dev-server": "^5.2.2"
   },
   "dependencies": {
-    "gl-matrix": "^3.4.4"
+    "gl-matrix": "^3.4.4",
+    "numeric": "^1.2.6"
   }
 }

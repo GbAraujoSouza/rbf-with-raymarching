@@ -1,8 +1,5 @@
 import { vec3 } from "gl-matrix";
-import {
-    createBuiltInRbfFit,
-    type RbfFitResult,
-} from "./rbf";
+import { createBuiltInRbfFit, type RbfFitResult } from "./rbf";
 import shader from "./shaders/rbf_raymarch.wgsl";
 
 export class Renderer {
@@ -193,8 +190,16 @@ export class Renderer {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
-        this.device.queue.writeBuffer(this.positionsBuffer, 0, this.rbfFit.positions);
-        this.device.queue.writeBuffer(this.weightsBuffer, 0, this.rbfFit.weights);
+        this.device.queue.writeBuffer(
+            this.positionsBuffer,
+            0,
+            this.rbfFit.positions,
+        );
+        this.device.queue.writeBuffer(
+            this.weightsBuffer,
+            0,
+            this.rbfFit.weights,
+        );
     }
 
     render = () => {
@@ -269,12 +274,7 @@ export class Renderer {
             20,
         );
         uniformData.set(
-            [
-                this.rbfFit.kernelSigma,
-                this.rbfFit.pointRadius,
-                this.fieldOfView,
-                0,
-            ],
+            [this.rbfFit.epsilon, this.rbfFit.pointRadius, this.fieldOfView, 0],
             24,
         );
         uniformData.set([10, 10, 10, 0], 28);

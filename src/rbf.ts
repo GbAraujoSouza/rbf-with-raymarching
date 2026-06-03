@@ -1,3 +1,6 @@
+// @ts-ignore
+import numeric from "numeric";
+
 export interface RbfSample {
     position: [number, number, number];
     target: number;
@@ -5,10 +8,8 @@ export interface RbfSample {
 
 export interface RbfFitConfig {
     radius: number;
-    offsetDistance: number;
     surfaceSampleCount: number;
-    kernelSigma: number;
-    regularization: number;
+    epsilon: number;
 }
 
 export interface RbfFitResult {
@@ -16,7 +17,7 @@ export interface RbfFitResult {
     positions: Float32Array<ArrayBuffer>;
     targets: Float32Array<ArrayBuffer>;
     weights: Float32Array<ArrayBuffer>;
-    kernelSigma: number;
+    epsilon: number;
     correctionPower: number;
     correctionLinear: number;
     pointRadius: number;
@@ -24,10 +25,8 @@ export interface RbfFitResult {
 
 const DEFAULT_CONFIG: RbfFitConfig = {
     radius: 1,
-    offsetDistance: 0.18,
-    surfaceSampleCount: 18,
-    kernelSigma: 1.35,
-    regularization: 1e-5,
+    surfaceSampleCount: 32,
+    epsilon: 1.35,
 };
 
 const CORRECTION_POWER = 0.85;
@@ -41,7 +40,6 @@ export function createBuiltInRbfFit(
     const samples = createSphereConstraintSamples(
         config.surfaceSampleCount,
         config.radius,
-        config.offsetDistance,
     );
     const targets = new Float32Array(samples.length);
     const positions = new Float32Array(samples.length * 4);
@@ -62,7 +60,7 @@ export function createBuiltInRbfFit(
         positions,
         targets,
         weights,
-        kernelSigma: config.kernelSigma,
+        epsilon: config.epsilon,
         correctionPower: CORRECTION_POWER,
         correctionLinear: CORRECTION_LINEAR,
         pointRadius: DEBUG_POINT_RADIUS,
@@ -72,19 +70,42 @@ export function createBuiltInRbfFit(
 function createSphereConstraintSamples(
     surfaceSampleCount: number,
     radius: number,
-    offsetDistance: number,
 ): RbfSample[] {
     const samples: RbfSample[] = [];
+    const surfacePoints: [number, number, number][] = [];
 
     for (let index = 0; index < surfaceSampleCount; index += 1) {
         const direction = fibonacciDirection(index, surfaceSampleCount);
         const surfacePoint = scale(direction, radius);
-        const outwardPoint = scale(direction, radius + offsetDistance);
-        const inwardPoint = scale(direction, radius - offsetDistance);
 
+        surfacePoints.push(surfacePoint);
         samples.push({ position: surfacePoint, target: 0 });
-        samples.push({ position: outwardPoint, target: offsetDistance });
-        samples.push({ position: inwardPoint, target: -offsetDistance });
+    }
+
+    // Ponto âncora interno: Garante que o campo RBF fique negativo no núcleo da esfera
+    //samples.push({ position: [0, 0, 0], target: -radius });
+
+    // Cria os Anchor Points adaptados dinamicamente ao raio da esfera
+    const bounds = radius * 2.0;
+    const anchorPoints: [number, number, number][] = [
+        [-bounds, -bounds, -bounds],
+        [-bounds, -bounds, bounds],
+        [-bounds, bounds, -bounds],
+        [-bounds, bounds, bounds],
+        [bounds, -bounds, -bounds],
+        [bounds, -bounds, bounds],
+        [bounds, bounds, -bounds],
+        [bounds, bounds, bounds],
+    ];
+
+    for (const anchor of anchorPoints) {
+        let minDist = Number.MAX_VALUE;
+        for (const sp of surfacePoints) {
+            // kernel ou distancia
+            const dist = distance(anchor, sp);
+            minDist = Math.min(minDist, dist);
+        }
+        samples.push({ position: anchor, target: minDist });
     }
 
     return samples;
@@ -108,109 +129,33 @@ function solveRbfWeights(
     config: RbfFitConfig,
 ): Float32Array<ArrayBuffer> {
     const count = samples.length;
-    const system = new Float64Array(count * count);
-    const targets = new Float64Array(count);
+    const M: number[][] = [];
+    const targets: number[] = [];
 
     for (let row = 0; row < count; row += 1) {
         const sampleRow = samples[row];
-        targets[row] = sampleRow.target;
+        targets.push(sampleRow.target);
+        const matrixRow: number[] = [];
 
         for (let column = 0; column < count; column += 1) {
             const sampleColumn = samples[column];
             const radius = distance(sampleRow.position, sampleColumn.position);
-            const diagonal = row === column ? config.regularization : 0;
+            //const diagonal = row === column ? config.regularization : 0;
+            const diagonal = 0;
 
-            system[row * count + column] =
-                gaussianKernel(radius, config.kernelSigma) + diagonal;
+            matrixRow.push(gaussianKernel(radius, config.epsilon) + diagonal);
         }
+        M.push(matrixRow);
     }
 
-    const solvedWeights = solveLinearSystem(system, targets, count);
+    const LU = numeric.LU(M);
+    const solvedWeights = numeric.LUsolve(LU, targets);
+
     return new Float32Array(solvedWeights);
 }
 
-function solveLinearSystem(
-    matrix: Float64Array<ArrayBuffer>,
-    vector: Float64Array<ArrayBuffer>,
-    size: number,
-): Float64Array<ArrayBuffer> {
-    const augmented = new Float64Array(size * (size + 1));
-
-    for (let row = 0; row < size; row += 1) {
-        for (let column = 0; column < size; column += 1) {
-            augmented[row * (size + 1) + column] = matrix[row * size + column];
-        }
-        augmented[row * (size + 1) + size] = vector[row];
-    }
-
-    for (let pivot = 0; pivot < size; pivot += 1) {
-        let maxRow = pivot;
-        let maxValue = Math.abs(augmented[pivot * (size + 1) + pivot]);
-
-        for (let row = pivot + 1; row < size; row += 1) {
-            const value = Math.abs(augmented[row * (size + 1) + pivot]);
-            if (value > maxValue) {
-                maxValue = value;
-                maxRow = row;
-            }
-        }
-
-        if (maxValue < 1e-10) {
-            throw new Error("RBF system is singular or ill-conditioned.");
-        }
-
-        if (maxRow !== pivot) {
-            swapRows(augmented, size + 1, pivot, maxRow);
-        }
-
-        const pivotValue = augmented[pivot * (size + 1) + pivot];
-
-        for (let column = pivot; column <= size; column += 1) {
-            augmented[pivot * (size + 1) + column] /= pivotValue;
-        }
-
-        for (let row = 0; row < size; row += 1) {
-            if (row === pivot) {
-                continue;
-            }
-
-            const factor = augmented[row * (size + 1) + pivot];
-            if (factor === 0) {
-                continue;
-            }
-
-            for (let column = pivot; column <= size; column += 1) {
-                augmented[row * (size + 1) + column] -=
-                    factor * augmented[pivot * (size + 1) + column];
-            }
-        }
-    }
-
-    const solution = new Float64Array(size);
-    for (let row = 0; row < size; row += 1) {
-        solution[row] = augmented[row * (size + 1) + size];
-    }
-
-    return solution;
-}
-
-function swapRows(
-    matrix: Float64Array<ArrayBuffer>,
-    stride: number,
-    rowA: number,
-    rowB: number,
-) {
-    for (let column = 0; column < stride; column += 1) {
-        const firstIndex = rowA * stride + column;
-        const secondIndex = rowB * stride + column;
-        const temporary = matrix[firstIndex];
-        matrix[firstIndex] = matrix[secondIndex];
-        matrix[secondIndex] = temporary;
-    }
-}
-
-function gaussianKernel(radius: number, sigma: number): number {
-    const scaled = sigma * radius;
+function gaussianKernel(radius: number, epsilon: number): number {
+    const scaled = epsilon * radius;
     return Math.exp(-(scaled * scaled));
 }
 
