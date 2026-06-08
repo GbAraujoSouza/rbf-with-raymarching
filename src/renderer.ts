@@ -1,6 +1,7 @@
 import { vec3 } from "gl-matrix";
 import { createBuiltInRbfFit, type RbfFitResult } from "./rbf";
 import shader from "./shaders/rbf_raymarch.wgsl";
+import { DEFAULT_EXPERIMENT_STATE, ExperimentState } from "./experiment";
 
 export class Renderer {
     canvas: HTMLCanvasElement;
@@ -19,21 +20,27 @@ export class Renderer {
 
     rbfFit!: RbfFitResult;
 
-    yaw = 0.7;
-    pitch = 0.5;
-    radius = 4.2;
-    readonly target = vec3.fromValues(0, 0, 0);
-    readonly fieldOfView = Math.PI / 4;
-    readonly maxDistance = 20;
-    readonly epsilon = 1e-3;
-    readonly showDebugPoints = 1;
+    experimentState: ExperimentState;
 
-    isPointerDown = false;
-    lastPointerX = 0;
-    lastPointerY = 0;
+    gpuTexture!: GPUTexture;
+    gpuTextureView!: GPUTextureView;
 
-    constructor(canvas: HTMLCanvasElement) {
+    yaw: number = 0.7;
+    pitch: number = 0.5;
+    radius: number = 4.2;
+    readonly target: vec3 = vec3.fromValues(0, 0, 0);
+    readonly fieldOfView: number = Math.PI / 4;
+
+    isPointerDown: boolean = false;
+    lastPointerX: number = 0;
+    lastPointerY: number = 0;
+
+    constructor(
+        canvas: HTMLCanvasElement,
+        experimentState: ExperimentState = DEFAULT_EXPERIMENT_STATE,
+    ) {
         this.canvas = canvas;
+        this.experimentState = experimentState;
     }
 
     async initialize() {
@@ -180,7 +187,7 @@ export class Renderer {
     }
 
     createAssets() {
-        this.rbfFit = createBuiltInRbfFit();
+        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig);
         this.positionsBuffer = this.device.createBuffer({
             size: this.rbfFit.positions.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -256,7 +263,7 @@ export class Renderer {
                 this.canvas.width,
                 this.canvas.height,
                 this.rbfFit.weights.length,
-                this.showDebugPoints,
+                this.experimentState.showControlPoints ? 1 : 0,
             ],
             0,
         );
@@ -266,15 +273,22 @@ export class Renderer {
         uniformData.set([up[0], up[1], up[2], 0], 16);
         uniformData.set(
             [
-                this.rbfFit.correctionPower,
-                this.rbfFit.correctionLinear,
-                this.maxDistance,
-                this.epsilon,
+                this.experimentState.rayMarchingConfig.correctionPower,
+                this.experimentState.rayMarchingConfig.correctionLinear,
+                this.experimentState.rayMarchingConfig.maxDistance,
+                this.experimentState.rayMarchingConfig.epsilon,
             ],
             20,
         );
+
+        // rbf params
         uniformData.set(
-            [this.rbfFit.epsilon, this.rbfFit.pointRadius, this.fieldOfView, 0],
+            [
+                this.experimentState.rbfConfig.gaussianEpsilon,
+                this.experimentState.rbfConfig.debugPointRadius,
+                this.fieldOfView,
+                0,
+            ],
             24,
         );
         uniformData.set([10, 10, 10, 0], 28);

@@ -1,5 +1,5 @@
 struct SceneUniforms {
-    screenAndCounts: vec4f,
+    screenAndCounts: vec4f, // width, height, # points, show_debug 
     cameraPosition: vec4f,
     cameraForward: vec4f,
     cameraRight: vec4f,

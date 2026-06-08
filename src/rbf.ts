@@ -7,9 +7,9 @@ export interface RbfSample {
 }
 
 export interface RbfFitConfig {
-    radius: number;
     surfaceSampleCount: number;
-    epsilon: number;
+    gaussianEpsilon: number;
+    sphereRadius: number;
 }
 
 export interface RbfFitResult {
@@ -17,29 +17,12 @@ export interface RbfFitResult {
     positions: Float32Array<ArrayBuffer>;
     targets: Float32Array<ArrayBuffer>;
     weights: Float32Array<ArrayBuffer>;
-    epsilon: number;
-    correctionPower: number;
-    correctionLinear: number;
-    pointRadius: number;
 }
 
-const DEFAULT_CONFIG: RbfFitConfig = {
-    radius: 1,
-    surfaceSampleCount: 32,
-    epsilon: 1.35,
-};
-
-const CORRECTION_POWER = 0.85;
-const CORRECTION_LINEAR = 0.9;
-const DEBUG_POINT_RADIUS = 0.06;
-
-export function createBuiltInRbfFit(
-    overrides: Partial<RbfFitConfig> = {},
-): RbfFitResult {
-    const config = { ...DEFAULT_CONFIG, ...overrides };
-    const samples = createSphereConstraintSamples(
+export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
+    const samples: RbfSample[] = createSphereConstraintSamples(
         config.surfaceSampleCount,
-        config.radius,
+        config.sphereRadius,
     );
     const targets = new Float32Array(samples.length);
     const positions = new Float32Array(samples.length * 4);
@@ -60,10 +43,6 @@ export function createBuiltInRbfFit(
         positions,
         targets,
         weights,
-        epsilon: config.epsilon,
-        correctionPower: CORRECTION_POWER,
-        correctionLinear: CORRECTION_LINEAR,
-        pointRadius: DEBUG_POINT_RADIUS,
     };
 }
 
@@ -83,7 +62,7 @@ function createSphereConstraintSamples(
     }
 
     // Ponto âncora interno: Garante que o campo RBF fique negativo no núcleo da esfera
-    //samples.push({ position: [0, 0, 0], target: -radius });
+    samples.push({ position: [0, 0, 0], target: -radius });
 
     // Cria os Anchor Points adaptados dinamicamente ao raio da esfera
     const bounds = radius * 2.0;
@@ -143,7 +122,9 @@ function solveRbfWeights(
             //const diagonal = row === column ? config.regularization : 0;
             const diagonal = 0;
 
-            matrixRow.push(gaussianKernel(radius, config.epsilon) + diagonal);
+            matrixRow.push(
+                gaussianKernel(radius, config.gaussianEpsilon) + diagonal,
+            );
         }
         M.push(matrixRow);
     }
