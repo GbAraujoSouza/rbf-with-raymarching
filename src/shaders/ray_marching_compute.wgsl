@@ -1,18 +1,26 @@
+struct SceneData {
+    cameraPosition: vec3f,
+    cameraForward: vec3f,
+    cameraRight: vec3f,
+    cameraUp: vec3f,
+}
+
 struct SceneUniforms {
     screenAndCounts: vec4f, // width, height, # points, show_debug 
-    cameraPosition: vec4f,
-    cameraForward: vec4f,
-    cameraRight: vec4f,
-    cameraUp: vec4f,
+    cameraPosition: vec3f,
+    cameraForward: vec3f,
+    cameraRight: vec3f,
+    cameraUp: vec3f,
     marchParams: vec4f,
     rbfParams: vec4f,
     lightPosition: vec4f,
 }
 
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) uv: vec2f,
-}
+
+@group(0) @binding(0) var screenTexture: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(1) var<uniform> sceneUniforms: SceneUniforms;
+@group(0) @binding(2) var<storage, read> samplePositions: SamplePositions;
+@group(0) @binding(3) var<storage, read> sampleWeights: SampleWeights;
 
 struct SamplePositions {
     values: array<vec4f>,
@@ -22,35 +30,17 @@ struct SampleWeights {
     values: array<f32>,
 }
 
-@group(0) @binding(0) var<uniform> uniforms: SceneUniforms;
-@group(0) @binding(1) var<storage, read> samplePositions: SamplePositions;
-@group(0) @binding(2) var<storage, read> sampleWeights: SampleWeights;
 
 const MAX_MARCHING_STEPS = 255;
 
-@vertex
-fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    var positions = array<vec2f, 3>(
-        vec2f(-1.0, -3.0),
-        vec2f(-1.0, 1.0),
-        vec2f(3.0, 1.0),
-    );
-
-    var output: VertexOutput;
-    let position = positions[vertexIndex];
-    output.position = vec4f(position, 0.0, 1.0);
-    output.uv = position * 0.5 + vec2f(0.5, 0.5);
-    return output;
-}
-
 fn gaussian(radius: f32) -> f32 {
-    let epsilon = uniforms.rbfParams.x;
+    let epsilon = sceneUniforms.rbfParams.x;
     let scaled = epsilon * radius;
     return exp(-(scaled * scaled));
 }
 
 fn rbfField(point: vec3f) -> f32 {
-    let sampleCount = i32(uniforms.screenAndCounts.z);
+    let sampleCount = i32(sceneUniforms.screenAndCounts.z);
     var total = 0.0;
 
     for (var index = 0; index < sampleCount; index += 1) {
@@ -63,12 +53,12 @@ fn rbfField(point: vec3f) -> f32 {
 }
 
 fn pointsSdf(point: vec3f) -> f32 {
-    let sampleCount = i32(uniforms.screenAndCounts.z);
-    var minimumDistance = uniforms.marchParams.z;
+    let sampleCount = i32(sceneUniforms.screenAndCounts.z);
+    var minimumDistance = sceneUniforms.marchParams.z;
 
     for (var index = 0; index < sampleCount; index += 1) {
         let center = samplePositions.values[index].xyz;
-        let distanceToPoint = distance(point, center) - uniforms.rbfParams.y;
+        let distanceToPoint = distance(point, center) - sceneUniforms.rbfParams.y;
         minimumDistance = min(minimumDistance, distanceToPoint);
     }
 
@@ -84,10 +74,10 @@ fn sceneSdf(point: vec3f, usePoints: bool) -> f32 {
 }
 
 fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: bool) -> f32 {
-    let maxDistance = uniforms.marchParams.z;
-    let epsilon = uniforms.marchParams.w;
-    let correctionPower = uniforms.marchParams.x;
-    let correctionLinear = uniforms.marchParams.y;
+    let maxDistance = sceneUniforms.marchParams.z;
+    let epsilon = sceneUniforms.marchParams.w;
+    let correctionPower = sceneUniforms.marchParams.x;
+    let correctionLinear = sceneUniforms.marchParams.y;
     var depth = 0.0;
 
     for (var step = 0; step < MAX_MARCHING_STEPS; step += 1) {
@@ -128,7 +118,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 }
 
 fn estimateNormal(point: vec3f, usePoints: bool) -> vec3f {
-    let epsilon = uniforms.marchParams.w;
+    let epsilon = sceneUniforms.marchParams.w;
     let xOffset = vec3f(epsilon, 0.0, 0.0);
     let yOffset = vec3f(0.0, epsilon, 0.0);
     let zOffset = vec3f(0.0, 0.0, epsilon);
@@ -143,9 +133,9 @@ fn estimateNormal(point: vec3f, usePoints: bool) -> vec3f {
 }
 
 fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
-    let lightPosition = uniforms.lightPosition.xyz;
+    let lightPosition = sceneUniforms.lightPosition.xyz;
     let lightIntensity = vec3f(1.0, 1.0, 1.0);
-    let eye = uniforms.cameraPosition.xyz;
+    let eye = sceneUniforms.cameraPosition.xyz;
     let ambient = 0.2 * baseColor;
     let diffuseColor = 0.6 * baseColor;
     let specularColor = vec3f(0.45, 0.45, 0.45);
@@ -164,48 +154,45 @@ fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
     return lightIntensity * (ambient + diffuse + specular);
 }
 
-fn rayDirection(uv: vec2f) -> vec3f {
-    let aspect = uniforms.screenAndCounts.x / uniforms.screenAndCounts.y;
-    let halfFovTangent = tan(0.5 * uniforms.rbfParams.z);
-    let ndc = vec2f(
-        uv.x * 2.0 - 1.0,
-        1.0 - uv.y * 2.0,
-    );
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
 
-    let ray =
-        uniforms.cameraForward.xyz +
-        ndc.x * aspect * halfFovTangent * uniforms.cameraRight.xyz +
-        ndc.y * halfFovTangent * uniforms.cameraUp.xyz;
+    let screenSize: vec2i = vec2i(textureDimensions(screenTexture));
+    let screenPos: vec2i = vec2i(i32(GlobalInvocationId.x), i32(GlobalInvocationId.y));
+    if (screenPos.x >= screenSize.x || screenPos.y >= screenSize.y) {
+        return;
+    }
 
-    return normalize(ray);
-}
+    let horizontalCoeff: f32 = (f32(screenPos.x) - f32(screenSize.x) / 2.0) / f32(screenSize.x);
+    let verticalCoeff: f32 = (f32(screenPos.y) - f32(screenSize.y) / 2.0) / f32(screenSize.x);
 
-@fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-    let rayOrigin = uniforms.cameraPosition.xyz;
-    let rayDir = rayDirection(input.uv);
-    let showPoints = uniforms.screenAndCounts.w > 0.5;
 
-    let rbfDistance = shortestDistanceToSurface(rayOrigin, rayDir, false);
+    let rayOrigin = sceneUniforms.cameraPosition.xyz;
+    let rayDirection = normalize(sceneUniforms.cameraForward + horizontalCoeff * sceneUniforms.cameraRight + verticalCoeff * sceneUniforms.cameraUp);
+    //let rayDir = rayDirection(input.uv);
+    let showPoints = sceneUniforms.screenAndCounts.w > 0.5;
+
+    let rbfDistance = shortestDistanceToSurface(rayOrigin, rayDirection, false);
     var hitDistance = rbfDistance;
     var hitPoints = false;
 
     if (showPoints) {
-        let pointsDistance = shortestDistanceToSurface(rayOrigin, rayDir, true);
+        let pointsDistance = shortestDistanceToSurface(rayOrigin, rayDirection, true);
         if (pointsDistance < hitDistance) {
             hitDistance = pointsDistance;
             hitPoints = true;
         }
     }
 
-    if (hitDistance >= uniforms.marchParams.z) {
-        discard;
+    if (hitDistance >= sceneUniforms.marchParams.z) {
+        textureStore(screenTexture, screenPos, vec4f(0.5, 0.5, 0.5, 1.0));
     }
 
-    let point = rayOrigin + hitDistance * rayDir;
+    let point = rayOrigin + hitDistance * rayDirection;
     let normal = estimateNormal(point, hitPoints);
     let baseColor = select(vec3f(0.93, 0.32, 0.25), vec3f(0.96, 0.84, 0.23), hitPoints);
     let shaded = phong(baseColor, point, normal);
 
-    return vec4f(shaded, 1.0);
+    //return vec4f(shaded, 1.0);
+    textureStore(screenTexture, screenPos, vec4f(shaded, 1.0));
 }
