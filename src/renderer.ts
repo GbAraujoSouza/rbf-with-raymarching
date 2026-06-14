@@ -133,7 +133,7 @@ export class Renderer {
                 {
                     binding: 1,
                     visibility: GPUShaderStage.COMPUTE,
-                    buffer: {},
+                    buffer: { type: "uniform" },
                 },
                 {
                     binding: 2,
@@ -327,7 +327,7 @@ export class Renderer {
         // draw stuff
         pass.setPipeline(this.pipeline);
         pass.setBindGroup(0, this.bindGroup);
-        pass.draw(3);
+        pass.draw(6, 1, 0, 0);
 
         pass.end();
         const commandBuffer = encoder.finish();

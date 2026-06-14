@@ -17,16 +17,29 @@ struct VertexOutput {
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-    var positions = array<vec2f, 3>(
-        vec2f(-1.0, -3.0),
-        vec2f(-1.0, 1.0),
-        vec2f(3.0, 1.0),
+    var positions = array<vec2f, 6>(
+        vec2<f32>( 1.0,  1.0),
+        vec2<f32>( 1.0, -1.0),
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>( 1.0,  1.0),
+        vec2<f32>(-1.0, -1.0),
+        vec2<f32>(-1.0,  1.0)
     );
 
+    var texCoords = array<vec2f, 6>(
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(1.0, 1.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(1.0, 0.0),
+        vec2<f32>(0.0, 1.0),
+        vec2<f32>(0.0, 0.0)
+    );
+
+
     var output: VertexOutput;
-    let position = positions[vertexIndex];
-    output.position = vec4f(position, 0.0, 1.0);
-    output.uv = position * 0.5 + vec2f(0.5, 0.5);
+    output.position = vec4f(positions[vertexIndex], 0.0, 1.0);
+    output.uv = texCoords[vertexIndex];
+
     return output;
 }
 

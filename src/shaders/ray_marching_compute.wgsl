@@ -30,6 +30,11 @@ struct SampleWeights {
     values: array<f32>,
 }
 
+struct MarchingResult {
+    distance: f32,
+    steps: i32,
+}
+
 
 const MAX_MARCHING_STEPS = 255;
 
@@ -73,12 +78,14 @@ fn sceneSdf(point: vec3f, usePoints: bool) -> f32 {
     return rbfField(point);
 }
 
-fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: bool) -> f32 {
+fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: bool) -> MarchingResult {
     let maxDistance = sceneUniforms.marchParams.z;
     let epsilon = sceneUniforms.marchParams.w;
     let correctionPower = sceneUniforms.marchParams.x;
     let correctionLinear = sceneUniforms.marchParams.y;
     var depth = 0.0;
+
+    var result: MarchingResult;
 
     for (var step = 0; step < MAX_MARCHING_STEPS; step += 1) {
         let point = rayOrigin + depth * rayDirection;
@@ -87,11 +94,15 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 
         if (usePoints) {
             if (distanceToSurface < epsilon) {
-                return depth;
+                result.distance = depth;
+                result.steps = step;
+                return result;
             }
         } else {
             if (fieldValue < 0.0 && length(point) < 2) {
-                return depth;
+                result.distance = depth;
+                result.steps = step;
+                return result;
             }
         }
 
@@ -110,11 +121,15 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
         depth += max(stepDistance, epsilon);
 
         if (depth >= maxDistance) {
-            return maxDistance;
+            result.distance = maxDistance;
+            result.steps = step;
+            return result;
         }
     }
 
-    return maxDistance;
+    result.distance = maxDistance;
+    result.steps = MAX_MARCHING_STEPS;
+    return result;
 }
 
 fn estimateNormal(point: vec3f, usePoints: bool) -> vec3f {
@@ -172,12 +187,15 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     //let rayDir = rayDirection(input.uv);
     let showPoints = sceneUniforms.screenAndCounts.w > 0.5;
 
-    let rbfDistance = shortestDistanceToSurface(rayOrigin, rayDirection, false);
+    let rbfResult = shortestDistanceToSurface(rayOrigin, rayDirection, false);
+    let rbfDistance = rbfResult.distance;
+
     var hitDistance = rbfDistance;
     var hitPoints = false;
 
     if (showPoints) {
-        let pointsDistance = shortestDistanceToSurface(rayOrigin, rayDirection, true);
+        let pointsResult = shortestDistanceToSurface(rayOrigin, rayDirection, true);
+        let pointsDistance = pointsResult.distance;
         if (pointsDistance < hitDistance) {
             hitDistance = pointsDistance;
             hitPoints = true;
@@ -185,7 +203,8 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     }
 
     if (hitDistance >= sceneUniforms.marchParams.z) {
-        textureStore(screenTexture, screenPos, vec4f(0.5, 0.5, 0.5, 1.0));
+        textureStore(screenTexture, screenPos, vec4f(0.1176, 0.1176, 0.1804, 1.0));
+        return;
     }
 
     let point = rayOrigin + hitDistance * rayDirection;
