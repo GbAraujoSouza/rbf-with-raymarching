@@ -1,5 +1,6 @@
 import "./styles.css";
 import { Renderer } from "./renderer";
+import { setupUI } from "./interface";
 
 const canvas = <HTMLCanvasElement>(
     document.querySelector<HTMLCanvasElement>("#gpu-canvas")
@@ -15,3 +16,4 @@ canvas.height = window.innerHeight;
 const renderer = new Renderer(canvas);
 
 renderer.initialize();
+setupUI(renderer);

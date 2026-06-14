@@ -40,6 +40,11 @@ export class Renderer {
     lastPointerX: number = 0;
     lastPointerY: number = 0;
 
+    lastTime: number = performance.now();
+    frameCount: number = 0;
+    fps: number = 0;
+    fpsElement: HTMLElement | null = null;
+
     constructor(
         canvas: HTMLCanvasElement,
         experimentState: ExperimentState = DEFAULT_EXPERIMENT_STATE,
@@ -298,6 +303,20 @@ export class Renderer {
     }
 
     render = () => {
+        const now = performance.now();
+        this.frameCount++;
+        if (now - this.lastTime >= 1000) {
+            this.fps = this.frameCount;
+            this.frameCount = 0;
+            this.lastTime = now;
+            if (!this.fpsElement) {
+                this.fpsElement = document.getElementById("fps-counter");
+            }
+            if (this.fpsElement) {
+                this.fpsElement.innerText = this.fps.toString();
+            }
+        }
+
         this.updateSceneUniforms();
 
         const encoder = this.device.createCommandEncoder();
@@ -440,6 +459,55 @@ export class Renderer {
         this.canvas.addEventListener("pointerup", releasePointer);
         this.canvas.addEventListener("pointerleave", releasePointer);
         this.canvas.addEventListener("pointercancel", releasePointer);
+    }
+
+    rebuildRbfAssets() {
+        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig);
+
+        this.positionsBuffer.destroy();
+        this.weightsBuffer.destroy();
+
+        this.positionsBuffer = this.device.createBuffer({
+            size: this.rbfFit.positions.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        this.weightsBuffer = this.device.createBuffer({
+            size: this.rbfFit.weights.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+
+        this.device.queue.writeBuffer(
+            this.positionsBuffer,
+            0,
+            this.rbfFit.positions,
+        );
+        this.device.queue.writeBuffer(
+            this.weightsBuffer,
+            0,
+            this.rbfFit.weights,
+        );
+
+        this.computeBindGroup = this.device.createBindGroup({
+            layout: this.computePipeline.getBindGroupLayout(0),
+            entries: [
+                {
+                    binding: 0,
+                    resource: this.gpuTextureView,
+                },
+                {
+                    binding: 1,
+                    resource: { buffer: this.uniformBuffer },
+                },
+                {
+                    binding: 2,
+                    resource: { buffer: this.positionsBuffer },
+                },
+                {
+                    binding: 3,
+                    resource: { buffer: this.weightsBuffer },
+                },
+            ],
+        });
     }
 }
 
