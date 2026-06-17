@@ -410,7 +410,7 @@ export class Renderer {
                 this.experimentState.rbfConfig.gaussianEpsilon,
                 this.experimentState.rbfConfig.debugPointRadius,
                 this.fieldOfView,
-                0,
+                this.experimentState.renderMode,
             ],
             24,
         );

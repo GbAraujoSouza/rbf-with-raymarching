@@ -2,6 +2,11 @@ import type { RbfFitConfig } from "./rbf";
 
 export type StepStrategy = "naive" | "exponential_correction" | "gradient";
 
+export enum RenderMode {
+    "shaded" = 0,
+    "heatmap" = 1,
+}
+
 export interface RayMarchingConfig {
     strategy: StepStrategy;
     epsilon: number;
@@ -19,12 +24,13 @@ export interface ExperimentState {
     sceneId: string;
     rayMarchingConfig: RayMarchingConfig;
     rbfConfig: ExperimentRbfConfig;
-    //renderMode: RenderMode;
+    renderMode: RenderMode;
     showControlPoints: boolean;
 }
 
 export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
     sceneId: "123",
+    renderMode: RenderMode.shaded,
     rayMarchingConfig: {
         strategy: "exponential_correction",
         epsilon: 1e-5,

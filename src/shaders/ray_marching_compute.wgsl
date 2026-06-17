@@ -12,7 +12,7 @@ struct SceneUniforms {
     cameraRight: vec3f,
     cameraUp: vec3f,
     marchParams: vec4f,
-    rbfParams: vec4f,
+    rbfParams: vec4f, // gaussian_epsilon, debug_points, fov, render_mode
     lightPosition: vec4f,
 }
 
@@ -211,6 +211,16 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     let normal = estimateNormal(point, hitPoints);
     let baseColor = select(vec3f(0.93, 0.32, 0.25), vec3f(0.96, 0.84, 0.23), hitPoints);
     let shaded = phong(baseColor, point, normal);
+
+    if (sceneUniforms.rbfParams.w == 1) {
+        let steps = rbfResult.steps;
+        let stepIntensity = f32(steps)/f32(MAX_MARCHING_STEPS);
+        // Heatmap: Blue (cold/few steps) to Red (hot/many steps)
+        let stepGradientColor = mix(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), stepIntensity);
+
+        textureStore(screenTexture, screenPos, vec4f(stepGradientColor, 1.0));
+        return;
+    }
 
     //return vec4f(shaded, 1.0);
     textureStore(screenTexture, screenPos, vec4f(shaded, 1.0));

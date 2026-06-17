@@ -5,28 +5,54 @@ export function setupUI(renderer: Renderer) {
     const experimentState = renderer.experimentState;
 
     // Show Control Points
-    const chkControlPoints = document.getElementById("chk-control-points") as HTMLInputElement;
+    const chkControlPoints = document.getElementById(
+        "chk-control-points",
+    ) as HTMLInputElement;
     if (chkControlPoints) {
         chkControlPoints.checked = experimentState.showControlPoints;
         chkControlPoints.addEventListener("change", (e) => {
-            experimentState.showControlPoints = (e.target as HTMLInputElement).checked;
+            experimentState.showControlPoints = (
+                e.target as HTMLInputElement
+            ).checked;
+        });
+    }
+
+    const chkHeatMap = document.getElementById(
+        "chk-heat-map",
+    ) as HTMLInputElement;
+    if (chkHeatMap) {
+        chkHeatMap.checked = !!experimentState.renderMode;
+        chkHeatMap.addEventListener("change", (e) => {
+            experimentState.renderMode = (e.target as HTMLInputElement).checked
+                ? 1
+                : 0;
         });
     }
 
     // Ray Marching Strategy
-    const selStrategy = document.getElementById("sel-strategy") as HTMLSelectElement;
+    const selStrategy = document.getElementById(
+        "sel-strategy",
+    ) as HTMLSelectElement;
     if (selStrategy) {
         selStrategy.value = experimentState.rayMarchingConfig.strategy;
         selStrategy.addEventListener("change", (e) => {
-            experimentState.rayMarchingConfig.strategy = (e.target as HTMLSelectElement).value as StepStrategy;
+            experimentState.rayMarchingConfig.strategy = (
+                e.target as HTMLSelectElement
+            ).value as StepStrategy;
         });
     }
 
     // Bind slider helper
-    function bindSlider(id: string, valId: string, obj: any, key: string, isInt: boolean = false) {
+    function bindSlider(
+        id: string,
+        valId: string,
+        obj: any,
+        key: string,
+        isInt: boolean = false,
+    ) {
         const slider = document.getElementById(id) as HTMLInputElement;
         const valDisplay = document.getElementById(valId) as HTMLSpanElement;
-        
+
         if (!slider || !valDisplay) return;
 
         slider.value = obj[key].toString();
@@ -41,20 +67,69 @@ export function setupUI(renderer: Renderer) {
     }
 
     // Ray Marching params
-    bindSlider("rng-rm-epsilon", "val-rm-epsilon", experimentState.rayMarchingConfig, "epsilon");
-    bindSlider("rng-rm-maxdist", "val-rm-maxdist", experimentState.rayMarchingConfig, "maxDistance");
-    bindSlider("rng-rm-maxsteps", "val-rm-maxsteps", experimentState.rayMarchingConfig, "maxSteps", true);
-    bindSlider("rng-rm-corlinear", "val-rm-corlinear", experimentState.rayMarchingConfig, "correctionLinear");
-    bindSlider("rng-rm-corpower", "val-rm-corpower", experimentState.rayMarchingConfig, "correctionPower");
+    bindSlider(
+        "rng-rm-epsilon",
+        "val-rm-epsilon",
+        experimentState.rayMarchingConfig,
+        "epsilon",
+    );
+    bindSlider(
+        "rng-rm-maxdist",
+        "val-rm-maxdist",
+        experimentState.rayMarchingConfig,
+        "maxDistance",
+    );
+    bindSlider(
+        "rng-rm-maxsteps",
+        "val-rm-maxsteps",
+        experimentState.rayMarchingConfig,
+        "maxSteps",
+        true,
+    );
+    bindSlider(
+        "rng-rm-corlinear",
+        "val-rm-corlinear",
+        experimentState.rayMarchingConfig,
+        "correctionLinear",
+    );
+    bindSlider(
+        "rng-rm-corpower",
+        "val-rm-corpower",
+        experimentState.rayMarchingConfig,
+        "correctionPower",
+    );
 
     // RBF Config params
-    bindSlider("rng-rbf-samples", "val-rbf-samples", experimentState.rbfConfig, "surfaceSampleCount", true);
-    bindSlider("rng-rbf-gEpsilon", "val-rbf-gEpsilon", experimentState.rbfConfig, "gaussianEpsilon");
-    bindSlider("rng-rbf-radius", "val-rbf-radius", experimentState.rbfConfig, "sphereRadius");
-    bindSlider("rng-rbf-debugRadius", "val-rbf-debugRadius", experimentState.rbfConfig, "debugPointRadius");
+    bindSlider(
+        "rng-rbf-samples",
+        "val-rbf-samples",
+        experimentState.rbfConfig,
+        "surfaceSampleCount",
+        true,
+    );
+    bindSlider(
+        "rng-rbf-gEpsilon",
+        "val-rbf-gEpsilon",
+        experimentState.rbfConfig,
+        "gaussianEpsilon",
+    );
+    bindSlider(
+        "rng-rbf-radius",
+        "val-rbf-radius",
+        experimentState.rbfConfig,
+        "sphereRadius",
+    );
+    bindSlider(
+        "rng-rbf-debugRadius",
+        "val-rbf-debugRadius",
+        experimentState.rbfConfig,
+        "debugPointRadius",
+    );
 
     // Apply RBF config button
-    const btnApplyRbf = document.getElementById("btn-apply-rbf") as HTMLButtonElement;
+    const btnApplyRbf = document.getElementById(
+        "btn-apply-rbf",
+    ) as HTMLButtonElement;
     if (btnApplyRbf) {
         btnApplyRbf.addEventListener("click", () => {
             renderer.rebuildRbfAssets();

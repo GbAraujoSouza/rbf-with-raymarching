@@ -4,9 +4,12 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>WebGPU Starter</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+            rel="stylesheet"
+        />
     </head>
     <body>
         <canvas id="gpu-canvas"></canvas>
@@ -19,8 +22,12 @@
             <div class="modal-section">
                 <h3>Rendering Options</h3>
                 <label class="checkbox-label">
-                    <input type="checkbox" id="chk-control-points" checked>
+                    <input type="checkbox" id="chk-control-points" checked />
                     Show Control Points
+                </label>
+                <label class="heatmap-label">
+                    <input type="checkbox" id="chk-heat-map" checked />
+                    Steps HeatMap
                 </label>
             </div>
 
@@ -30,51 +37,163 @@
                     <label>Strategy</label>
                     <select id="sel-strategy">
                         <option value="naive">Naive</option>
-                        <option value="exponential_correction" selected>Exponential Correction</option>
+                        <option value="exponential_correction" selected>
+                            Exponential Correction
+                        </option>
                         <option value="gradient">Gradient</option>
                     </select>
                 </div>
                 <div class="control-group">
-                    <label>Epsilon <span class="val-display" id="val-rm-epsilon">1e-5</span></label>
-                    <input type="range" id="rng-rm-epsilon" min="0.000001" max="0.001" step="0.000001" value="0.00001">
+                    <label
+                        >Epsilon
+                        <span class="val-display" id="val-rm-epsilon"
+                            >1e-5</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rm-epsilon"
+                        min="0.000001"
+                        max="0.001"
+                        step="0.000001"
+                        value="0.00001"
+                    />
                 </div>
                 <div class="control-group">
-                    <label>Max Distance <span class="val-display" id="val-rm-maxdist">20</span></label>
-                    <input type="range" id="rng-rm-maxdist" min="1" max="100" step="1" value="20">
+                    <label
+                        >Max Distance
+                        <span class="val-display" id="val-rm-maxdist"
+                            >20</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rm-maxdist"
+                        min="1"
+                        max="100"
+                        step="1"
+                        value="20"
+                    />
                 </div>
                 <div class="control-group">
-                    <label>Max Steps <span class="val-display" id="val-rm-maxsteps">255</span></label>
-                    <input type="range" id="rng-rm-maxsteps" min="10" max="1000" step="1" value="255">
+                    <label
+                        >Max Steps
+                        <span class="val-display" id="val-rm-maxsteps"
+                            >255</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rm-maxsteps"
+                        min="10"
+                        max="1000"
+                        step="1"
+                        value="255"
+                    />
                 </div>
                 <div class="control-group">
-                    <label>Corr Linear <span class="val-display" id="val-rm-corlinear">0.9</span></label>
-                    <input type="range" id="rng-rm-corlinear" min="0" max="2" step="0.01" value="0.9">
+                    <label
+                        >Corr Linear
+                        <span class="val-display" id="val-rm-corlinear"
+                            >0.9</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rm-corlinear"
+                        min="0"
+                        max="2"
+                        step="0.01"
+                        value="0.9"
+                    />
                 </div>
                 <div class="control-group">
-                    <label>Corr Power <span class="val-display" id="val-rm-corpower">0.85</span></label>
-                    <input type="range" id="rng-rm-corpower" min="0" max="2" step="0.01" value="0.85">
+                    <label
+                        >Corr Power
+                        <span class="val-display" id="val-rm-corpower"
+                            >0.85</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rm-corpower"
+                        min="0"
+                        max="2"
+                        step="0.01"
+                        value="0.85"
+                    />
                 </div>
             </div>
 
             <div class="modal-section">
                 <h3>RBF Config</h3>
                 <div class="control-group">
-                    <label>Surface Samples <span class="val-display" id="val-rbf-samples">32</span></label>
-                    <input type="range" id="rng-rbf-samples" min="8" max="256" step="1" value="32">
+                    <label
+                        >Surface Samples
+                        <span class="val-display" id="val-rbf-samples"
+                            >32</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rbf-samples"
+                        min="8"
+                        max="256"
+                        step="1"
+                        value="32"
+                    />
                 </div>
                 <div class="control-group">
-                    <label>Gaussian Epsilon <span class="val-display" id="val-rbf-gEpsilon">1.35</span></label>
-                    <input type="range" id="rng-rbf-gEpsilon" min="0.1" max="5.0" step="0.01" value="1.35">
+                    <label
+                        >Gaussian Epsilon
+                        <span class="val-display" id="val-rbf-gEpsilon"
+                            >1.35</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rbf-gEpsilon"
+                        min="0.1"
+                        max="5.0"
+                        step="0.01"
+                        value="1.35"
+                    />
                 </div>
                 <div class="control-group">
-                    <label>Sphere Radius <span class="val-display" id="val-rbf-radius">1</span></label>
-                    <input type="range" id="rng-rbf-radius" min="0.1" max="5.0" step="0.1" value="1.0">
+                    <label
+                        >Sphere Radius
+                        <span class="val-display" id="val-rbf-radius"
+                            >1</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rbf-radius"
+                        min="0.1"
+                        max="5.0"
+                        step="0.1"
+                        value="1.0"
+                    />
                 </div>
                 <div class="control-group">
-                    <label>Debug Radius <span class="val-display" id="val-rbf-debugRadius">0.06</span></label>
-                    <input type="range" id="rng-rbf-debugRadius" min="0.01" max="0.5" step="0.01" value="0.06">
+                    <label
+                        >Debug Radius
+                        <span class="val-display" id="val-rbf-debugRadius"
+                            >0.06</span
+                        ></label
+                    >
+                    <input
+                        type="range"
+                        id="rng-rbf-debugRadius"
+                        min="0.01"
+                        max="0.5"
+                        step="0.01"
+                        value="0.06"
+                    />
                 </div>
-                <button id="btn-apply-rbf" class="btn-primary">Apply RBF Config</button>
+                <button id="btn-apply-rbf" class="btn-primary">
+                    Apply RBF Config
+                </button>
             </div>
         </div>
     </body>
