@@ -325,8 +325,8 @@ export class Renderer {
         computePass.setBindGroup(0, this.computeBindGroup);
         computePass.setPipeline(this.computePipeline);
         computePass.dispatchWorkgroups(
-            Math.ceil(this.canvas.width / 8),
-            Math.ceil(this.canvas.height / 8),
+            Math.ceil(this.canvas.width / 16),
+            Math.ceil(this.canvas.height / 16),
             1,
         );
         computePass.end();
@@ -409,7 +409,7 @@ export class Renderer {
             [
                 this.experimentState.rbfConfig.gaussianEpsilon,
                 this.experimentState.rbfConfig.debugPointRadius,
-                this.fieldOfView,
+                this.experimentState.rayMarchingConfig.strategy,
                 this.experimentState.renderMode,
             ],
             24,

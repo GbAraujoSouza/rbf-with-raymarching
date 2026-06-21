@@ -1,6 +1,10 @@
 import type { RbfFitConfig } from "./rbf";
 
-export type StepStrategy = "naive" | "exponential_correction" | "gradient";
+export enum StepStrategy {
+    "naive" = 0,
+    "exponential_correction" = 1,
+    "gradient" = 2,
+}
 
 export enum RenderMode {
     "shaded" = 0,
@@ -32,7 +36,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
     sceneId: "123",
     renderMode: RenderMode.shaded,
     rayMarchingConfig: {
-        strategy: "exponential_correction",
+        strategy: StepStrategy.naive,
         epsilon: 1e-5,
         maxDistance: 20,
         maxSteps: 255,
@@ -42,8 +46,10 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
     rbfConfig: {
         surfaceSampleCount: 32,
         gaussianEpsilon: 1.35,
-        sphereRadius: 1,
-        debugPointRadius: 0.06,
+        sphereRadius: 0.7,
+        debugPointRadius: 0.02,
+        normalOffset: 0.1,
+        regularization: 0.001,
     },
-    showControlPoints: true,
+    showControlPoints: false,
 };

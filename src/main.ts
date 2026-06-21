@@ -1,6 +1,7 @@
 import "./styles.css";
 import { Renderer } from "./renderer";
 import { setupUI } from "./interface";
+import { ObjParser } from "./obj-parser";
 
 const canvas = <HTMLCanvasElement>(
     document.querySelector<HTMLCanvasElement>("#gpu-canvas")

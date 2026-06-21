@@ -1,6 +1,9 @@
 // @ts-ignore
 import numeric from "numeric";
 
+import dragonObj from "./dragon_points.obj";
+import { ObjParser } from "./obj-parser";
+
 export interface RbfSample {
     position: [number, number, number];
     target: number;
@@ -10,6 +13,8 @@ export interface RbfFitConfig {
     surfaceSampleCount: number;
     gaussianEpsilon: number;
     sphereRadius: number;
+    normalOffset: number;
+    regularization: number;
 }
 
 export interface RbfFitResult {
@@ -20,10 +25,8 @@ export interface RbfFitResult {
 }
 
 export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
-    const samples: RbfSample[] = createSphereConstraintSamples(
-        config.surfaceSampleCount,
-        config.sphereRadius,
-    );
+    const samples: RbfSample[] = createSphereConstraintSamples(config);
+    //const samples = createObjectConstraintSamples();
     const targets = new Float32Array(samples.length);
     const positions = new Float32Array(samples.length * 4);
 
@@ -36,7 +39,10 @@ export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
         positions[index * 4 + 3] = 0;
     }
 
-    const weights = solveRbfWeights(samples, config);
+    const start: number = performance.now();
+    const weights: Float32Array<ArrayBuffer> = solveRbfWeights(samples, config);
+    const end: number = performance.now();
+    console.log(`Linear system solve took: ${end - start} ms`);
 
     return {
         samples,
@@ -46,26 +52,17 @@ export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
     };
 }
 
-function createSphereConstraintSamples(
-    surfaceSampleCount: number,
-    radius: number,
-): RbfSample[] {
+function createObjectConstraintSamples(): RbfSample[] {
     const samples: RbfSample[] = [];
-    const surfacePoints: [number, number, number][] = [];
+    const pos = ObjParser.extractPositions(dragonObj);
+    pos.forEach((point) => {
+        samples.push({
+            position: [point.x, point.y, point.z],
+            target: 0,
+        });
+    });
 
-    for (let index = 0; index < surfaceSampleCount; index += 1) {
-        const direction = fibonacciDirection(index, surfaceSampleCount);
-        const surfacePoint = scale(direction, radius);
-
-        surfacePoints.push(surfacePoint);
-        samples.push({ position: surfacePoint, target: 0 });
-    }
-
-    // Ponto âncora interno: Garante que o campo RBF fique negativo no núcleo da esfera
-    samples.push({ position: [0, 0, 0], target: -radius });
-
-    // Cria os Anchor Points adaptados dinamicamente ao raio da esfera
-    const bounds = radius * 2.0;
+    const bounds = 1.0;
     const anchorPoints: [number, number, number][] = [
         [-bounds, -bounds, -bounds],
         [-bounds, -bounds, bounds],
@@ -79,13 +76,75 @@ function createSphereConstraintSamples(
 
     for (const anchor of anchorPoints) {
         let minDist = Number.MAX_VALUE;
-        for (const sp of surfacePoints) {
+        for (const sp of pos) {
             // kernel ou distancia
-            const dist = distance(anchor, sp);
+            const dist = distance(anchor, sp as any);
             minDist = Math.min(minDist, dist);
         }
         samples.push({ position: anchor, target: minDist });
     }
+
+    return samples;
+}
+
+function createSphereConstraintSamples(config: RbfFitConfig): RbfSample[] {
+    const samples: RbfSample[] = [];
+    const surfacePoints: [number, number, number][] = [];
+    const radius = config.sphereRadius;
+
+    for (let index = 0; index < config.surfaceSampleCount; index += 1) {
+        const direction = fibonacciDirection(index, config.surfaceSampleCount);
+        const surfacePoint = scale(direction, radius);
+
+        surfacePoints.push(surfacePoint);
+        samples.push({ position: surfacePoint, target: 0 });
+
+        if (config.normalOffset > 0) {
+            samples.push({
+                position: [
+                    surfacePoint[0] + direction[0] * config.normalOffset,
+                    surfacePoint[1] + direction[1] * config.normalOffset,
+                    surfacePoint[2] + direction[2] * config.normalOffset,
+                ],
+                target: config.normalOffset,
+            });
+
+            samples.push({
+                position: [
+                    surfacePoint[0] - direction[0] * config.normalOffset,
+                    surfacePoint[1] - direction[1] * config.normalOffset,
+                    surfacePoint[2] - direction[2] * config.normalOffset,
+                ],
+                target: -config.normalOffset,
+            });
+        }
+    }
+
+    // Ponto âncora interno: Garante que o campo RBF fique negativo no núcleo da esfera
+    samples.push({ position: [0, 0, 0], target: -radius });
+
+    // Cria os Anchor Points adaptados dinamicamente ao raio da esfera
+    // const bounds = radius * 2.0;
+    // const anchorPoints: [number, number, number][] = [
+    //     [-bounds, -bounds, -bounds],
+    //     [-bounds, -bounds, bounds],
+    //     [-bounds, bounds, -bounds],
+    //     [-bounds, bounds, bounds],
+    //     [bounds, -bounds, -bounds],
+    //     [bounds, -bounds, bounds],
+    //     [bounds, bounds, -bounds],
+    //     [bounds, bounds, bounds],
+    // ];
+
+    // for (const anchor of anchorPoints) {
+    //     let minDist = Number.MAX_VALUE;
+    //     for (const sp of surfacePoints) {
+    //         // kernel ou distancia
+    //         const dist = distance(anchor, sp);
+    //         minDist = Math.min(minDist, dist);
+    //     }
+    //     samples.push({ position: anchor, target: minDist });
+    // }
 
     return samples;
 }
@@ -119,8 +178,7 @@ function solveRbfWeights(
         for (let column = 0; column < count; column += 1) {
             const sampleColumn = samples[column];
             const radius = distance(sampleRow.position, sampleColumn.position);
-            //const diagonal = row === column ? config.regularization : 0;
-            const diagonal = 0;
+            const diagonal = row === column ? config.regularization : 0;
 
             matrixRow.push(
                 gaussianKernel(radius, config.gaussianEpsilon) + diagonal,

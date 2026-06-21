@@ -33,6 +33,10 @@ module.exports = (env = {}, argv = {}) => {
         {
           test: /\.wgsl$/,
           type: "asset/source"
+        },
+        {
+          test: /\.obj$/,
+          type: "asset/source"
         }
       ]
     },

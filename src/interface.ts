@@ -1,5 +1,5 @@
 import { Renderer } from "./renderer";
-import type { StepStrategy } from "./experiment";
+import { StepStrategy } from "./experiment";
 
 export function setupUI(renderer: Renderer) {
     const experimentState = renderer.experimentState;
@@ -34,11 +34,14 @@ export function setupUI(renderer: Renderer) {
         "sel-strategy",
     ) as HTMLSelectElement;
     if (selStrategy) {
-        selStrategy.value = experimentState.rayMarchingConfig.strategy;
+        selStrategy.value =
+            StepStrategy[experimentState.rayMarchingConfig.strategy];
         selStrategy.addEventListener("change", (e) => {
-            experimentState.rayMarchingConfig.strategy = (
-                e.target as HTMLSelectElement
-            ).value as StepStrategy;
+            experimentState.rayMarchingConfig.strategy =
+                StepStrategy[
+                    (e.target as HTMLSelectElement)
+                        .value as keyof typeof StepStrategy
+                ];
         });
     }
 
@@ -124,6 +127,18 @@ export function setupUI(renderer: Renderer) {
         "val-rbf-debugRadius",
         experimentState.rbfConfig,
         "debugPointRadius",
+    );
+    bindSlider(
+        "rng-rbf-offset",
+        "val-rbf-offset",
+        experimentState.rbfConfig,
+        "normalOffset",
+    );
+    bindSlider(
+        "rng-rbf-regularization",
+        "val-rbf-regularization",
+        experimentState.rbfConfig,
+        "regularization",
     );
 
     // Apply RBF config button

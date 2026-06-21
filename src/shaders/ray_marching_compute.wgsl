@@ -12,7 +12,7 @@ struct SceneUniforms {
     cameraRight: vec3f,
     cameraUp: vec3f,
     marchParams: vec4f,
-    rbfParams: vec4f, // gaussian_epsilon, debug_points, fov, render_mode
+    rbfParams: vec4f, // gaussian_epsilon, debug_points, step_strategy, render_mode
     lightPosition: vec4f,
 }
 
@@ -38,10 +38,11 @@ struct MarchingResult {
 
 const MAX_MARCHING_STEPS = 255;
 
-fn gaussian(radius: f32) -> f32 {
+fn gaussian(point: vec3f, center: vec3f) -> f32 {
     let epsilon = sceneUniforms.rbfParams.x;
-    let scaled = epsilon * radius;
-    return exp(-(scaled * scaled));
+    let epsilonSquared = epsilon * epsilon;
+    let d = point - center;
+    return exp(-epsilonSquared * dot(d, d));
 }
 
 fn rbfField(point: vec3f) -> f32 {
@@ -51,7 +52,7 @@ fn rbfField(point: vec3f) -> f32 {
     for (var index = 0; index < sampleCount; index += 1) {
         let center = samplePositions.values[index].xyz;
         let weight = sampleWeights.values[index];
-        total += gaussian(distance(point, center)) * weight;
+        total += gaussian(point, center) * weight;
     }
 
     return total;
@@ -78,6 +79,32 @@ fn sceneSdf(point: vec3f, usePoints: bool) -> f32 {
     return rbfField(point);
 }
 
+fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
+    var strategyId: u32 = u32(sceneUniforms.rbfParams.z);
+    switch(strategyId) {
+        case 0u {
+            // naive
+            return distanceToSurface;
+        }
+        case 1u {
+            // exponential correction
+            let epsilon = sceneUniforms.marchParams.w;
+            let correctionPower = sceneUniforms.marchParams.x;
+            let correctionLinear = sceneUniforms.marchParams.y;
+            return correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
+        }
+        case 2u {
+            // gradient
+            var gradient: vec3f = estimateNormal(point, false, false);
+            let rawStep = distanceToSurface / max(length(gradient), 0.01);
+            return rawStep;
+        }
+        default {
+            return distanceToSurface;
+        }
+    }
+}
+
 fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: bool) -> MarchingResult {
     let maxDistance = sceneUniforms.marchParams.z;
     let epsilon = sceneUniforms.marchParams.w;
@@ -99,7 +126,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
                 return result;
             }
         } else {
-            if (fieldValue < 0.0 && length(point) < 2) {
+            if (fieldValue < 0.0) {
                 result.distance = depth;
                 result.steps = step;
                 return result;
@@ -110,9 +137,10 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
         if (!usePoints) {
 
             // make the correcion to the step
-            stepDistance = correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
+            //stepDistance = correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
+            stepDistance = calculateStep(distanceToSurface, point);
             
-            let distToBounding = length(point) - 2;
+            let distToBounding = length(point) - 1;
             if (distToBounding > 0.0) {
                 stepDistance = max(stepDistance, distToBounding);
             }
@@ -132,7 +160,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     return result;
 }
 
-fn estimateNormal(point: vec3f, usePoints: bool) -> vec3f {
+fn estimateNormal(point: vec3f, usePoints: bool, normal: bool) -> vec3f {
     let epsilon = sceneUniforms.marchParams.w;
     let xOffset = vec3f(epsilon, 0.0, 0.0);
     let yOffset = vec3f(0.0, epsilon, 0.0);
@@ -144,7 +172,10 @@ fn estimateNormal(point: vec3f, usePoints: bool) -> vec3f {
         sceneSdf(point + zOffset, usePoints) - sceneSdf(point - zOffset, usePoints),
     );
 
-    return normalize(gradient);
+    if (normal) {
+        return normalize(gradient);
+    }
+    return gradient / (2.0 * epsilon);
 }
 
 fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
@@ -169,7 +200,7 @@ fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
     return lightIntensity * (ambient + diffuse + specular);
 }
 
-@compute @workgroup_size(8, 8, 1)
+@compute @workgroup_size(16, 16, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
 
     let screenSize: vec2i = vec2i(textureDimensions(screenTexture));
@@ -208,7 +239,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     }
 
     let point = rayOrigin + hitDistance * rayDirection;
-    let normal = estimateNormal(point, hitPoints);
+    let normal = estimateNormal(point, hitPoints, true);
     let baseColor = select(vec3f(0.93, 0.32, 0.25), vec3f(0.96, 0.84, 0.23), hitPoints);
     let shaded = phong(baseColor, point, normal);
 

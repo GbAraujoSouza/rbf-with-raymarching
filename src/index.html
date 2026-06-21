@@ -191,6 +191,35 @@
                         value="0.06"
                     />
                 </div>
+                <div class="control-group">
+                    <label
+                        >Normal offset
+                        <span id="val-rbf-offset" class="val-display"></span>
+                    </label>
+                    <input
+                        type="range"
+                        id="rng-rbf-offset"
+                        min="0"
+                        max="0.5"
+                        step="0.01"
+                    />
+                </div>
+                <div class="control-group">
+                    <label>
+                        Regularization
+                        <span
+                            id="val-rbf-regularization"
+                            class="val-display"
+                        ></span>
+                    </label>
+                    <input
+                        type="range"
+                        id="rng-rbf-regularization"
+                        min="0"
+                        max="0.01"
+                        step="0.0001"
+                    />
+                </div>
                 <button id="btn-apply-rbf" class="btn-primary">
                     Apply RBF Config
                 </button>
