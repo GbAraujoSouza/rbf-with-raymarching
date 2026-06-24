@@ -24,8 +24,10 @@ export interface ExperimentRbfConfig extends RbfFitConfig {
     debugPointRadius: number;
 }
 
+export type SceneId = "sphere" | "torus" | "dragon";
+
 export interface ExperimentState {
-    sceneId: string;
+    sceneId: SceneId;
     rayMarchingConfig: RayMarchingConfig;
     rbfConfig: ExperimentRbfConfig;
     renderMode: RenderMode;
@@ -33,7 +35,7 @@ export interface ExperimentState {
 }
 
 export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
-    sceneId: "123",
+    sceneId: "torus",
     renderMode: RenderMode.shaded,
     rayMarchingConfig: {
         strategy: StepStrategy.naive,
@@ -44,7 +46,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         correctionPower: 0.85,
     },
     rbfConfig: {
-        surfaceSampleCount: 32,
+        surfaceSampleCount: 8,
         gaussianEpsilon: 1.35,
         sphereRadius: 0.7,
         debugPointRadius: 0.02,

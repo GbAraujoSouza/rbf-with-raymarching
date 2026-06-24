@@ -33,9 +33,23 @@ export interface RbfFitResult {
     weights: Float32Array<ArrayBuffer>;
 }
 
-export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
-    //const samples: RbfSample[] = createSphereConstraintSamples(config);
-    const samples = createObjectConstraintSamples();
+export function createBuiltInRbfFit(
+    config: RbfFitConfig,
+    sceneId: string,
+): RbfFitResult {
+    let samples: RbfSample[];
+    switch (sceneId) {
+        case "torus":
+            samples = createTorusConstraintSamples(config);
+            break;
+        case "dragon":
+            samples = createObjectConstraintSamples(config);
+            break;
+        case "sphere":
+        default:
+            samples = createSphereConstraintSamples(config);
+            break;
+    }
     const targets = new Float32Array(samples.length);
     const positions = new Float32Array(samples.length * 4);
 
@@ -61,37 +75,52 @@ export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
     };
 }
 
-function createObjectConstraintSamples(): RbfSample[] {
+function createObjectConstraintSamples(config: RbfFitConfig): RbfSample[] {
     const samples: RbfSample[] = [];
-    const pos = ObjParser.extractPositions(dragonObj);
-    pos.forEach((point) => {
+    const orientedPos = ObjParser.extractPositionsAndNormals(dragonObj);
+    orientedPos.forEach((orientedPoint) => {
         samples.push({
-            position: [point.x, point.y, point.z],
+            position: [
+                orientedPoint.position.x,
+                orientedPoint.position.y,
+                orientedPoint.position.z,
+            ],
             target: 0,
         });
+        if (config.normalOffset > 0) {
+            const offset: number = config.normalOffset;
+            samples.push({
+                position: [
+                    orientedPoint.position.x + offset * orientedPoint.normal.x,
+                    orientedPoint.position.y + offset * orientedPoint.normal.y,
+                    orientedPoint.position.z + offset * orientedPoint.normal.z,
+                ],
+                target: offset,
+            });
+        }
     });
 
-    const bounds = 1.0;
-    const anchorPoints: [number, number, number][] = [
-        [-bounds, -bounds, -bounds],
-        [-bounds, -bounds, bounds],
-        [-bounds, bounds, -bounds],
-        [-bounds, bounds, bounds],
-        [bounds, -bounds, -bounds],
-        [bounds, -bounds, bounds],
-        [bounds, bounds, -bounds],
-        [bounds, bounds, bounds],
-    ];
+    // const bounds = 1.0;
+    // const anchorPoints: [number, number, number][] = [
+    //     [-bounds, -bounds, -bounds],
+    //     [-bounds, -bounds, bounds],
+    //     [-bounds, bounds, -bounds],
+    //     [-bounds, bounds, bounds],
+    //     [bounds, -bounds, -bounds],
+    //     [bounds, -bounds, bounds],
+    //     [bounds, bounds, -bounds],
+    //     [bounds, bounds, bounds],
+    // ];
 
-    for (const anchor of anchorPoints) {
-        let minDist = Number.MAX_VALUE;
-        for (const sp of pos) {
-            // kernel ou distancia
-            const dist = distance(anchor, sp as any);
-            minDist = Math.min(minDist, dist);
-        }
-        samples.push({ position: anchor, target: minDist });
-    }
+    // for (const anchor of anchorPoints) {
+    //     let minDist = Number.MAX_VALUE;
+    //     for (const sp of pos) {
+    //         // kernel ou distancia
+    //         const dist = distance(anchor, sp as any);
+    //         minDist = Math.min(minDist, dist);
+    //     }
+    //     samples.push({ position: anchor, target: minDist });
+    // }
 
     return samples;
 }
@@ -155,6 +184,61 @@ function createSphereConstraintSamples(config: RbfFitConfig): RbfSample[] {
     //     samples.push({ position: anchor, target: minDist });
     // }
 
+    return samples;
+}
+
+function createTorusConstraintSamples(config: RbfFitConfig): RbfSample[] {
+    const samples: RbfSample[] = [];
+    const surfacePoints: [number, number, number][] = [];
+    const majorRadius = config.sphereRadius;
+    const minorRadius = majorRadius * 0.4;
+
+    const sampleCount = config.surfaceSampleCount;
+    const numU = Math.max(2, Math.floor(Math.sqrt(sampleCount * 2)));
+    const numV = Math.max(2, Math.floor(sampleCount / numU) + 1);
+
+    for (let i = 0; i < numU; i++) {
+        for (let j = 0; j < numV; j++) {
+            if (samples.length >= sampleCount * 3) break;
+            const u = (i / numU) * Math.PI * 2;
+            const v = (j / numV) * Math.PI * 2;
+
+            const x = (majorRadius + minorRadius * Math.cos(v)) * Math.cos(u);
+            const z = (majorRadius + minorRadius * Math.cos(v)) * Math.sin(u);
+            const y = minorRadius * Math.sin(v);
+
+            const surfacePoint: [number, number, number] = [x, y, z];
+            surfacePoints.push(surfacePoint);
+            samples.push({ position: surfacePoint, target: 0 });
+
+            if (config.normalOffset > 0) {
+                const nx = Math.cos(v) * Math.cos(u);
+                const nz = Math.cos(v) * Math.sin(u);
+                const ny = Math.sin(v);
+
+                samples.push({
+                    position: [
+                        x + nx * config.normalOffset,
+                        y + ny * config.normalOffset,
+                        z + nz * config.normalOffset,
+                    ],
+                    target: config.normalOffset,
+                });
+
+                samples.push({
+                    position: [
+                        x - nx * config.normalOffset,
+                        y - ny * config.normalOffset,
+                        z - nz * config.normalOffset,
+                    ],
+                    target: -config.normalOffset,
+                });
+            }
+        }
+    }
+
+    // Anchor point in the center hole
+    samples.push({ position: [0, 0, 0], target: majorRadius - minorRadius });
     return samples;
 }
 

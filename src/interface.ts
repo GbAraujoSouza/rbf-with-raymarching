@@ -60,6 +60,14 @@ export function setupUI(renderer: Renderer) {
         });
     }
 
+    const selScene = document.getElementById("sel-scene") as HTMLSelectElement;
+    if (selScene) {
+        selScene.value = experimentState.sceneId;
+        selScene.addEventListener("change", (e) => {
+            experimentState.sceneId = (e.target as HTMLSelectElement).value as any;
+        });
+    }
+
     // Bind slider helper
     function bindSlider(
         id: string,

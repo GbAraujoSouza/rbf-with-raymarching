@@ -258,7 +258,7 @@ export class Renderer {
     }
 
     createAssets() {
-        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig);
+        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig, this.experimentState.sceneId);
         this.positionsBuffer = this.device.createBuffer({
             size: this.rbfFit.positions.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -467,7 +467,7 @@ export class Renderer {
     }
 
     rebuildRbfAssets() {
-        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig);
+        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig, this.experimentState.sceneId);
 
         this.positionsBuffer.destroy();
         this.weightsBuffer.destroy();
