@@ -2,6 +2,7 @@
 import numeric from "numeric";
 
 import dragonObj from "./dragon_points.obj";
+import carObj from "./points_block_car.obj";
 import { ObjParser } from "./obj-parser";
 
 export interface RbfSample {
@@ -77,7 +78,7 @@ export function createBuiltInRbfFit(
 
 function createObjectConstraintSamples(config: RbfFitConfig): RbfSample[] {
     const samples: RbfSample[] = [];
-    const orientedPos = ObjParser.extractPositionsAndNormals(dragonObj);
+    const orientedPos = ObjParser.extractPositionsAndNormals(carObj);
     orientedPos.forEach((orientedPoint) => {
         samples.push({
             position: [
@@ -114,9 +115,9 @@ function createObjectConstraintSamples(config: RbfFitConfig): RbfSample[] {
 
     // for (const anchor of anchorPoints) {
     //     let minDist = Number.MAX_VALUE;
-    //     for (const sp of pos) {
+    //     for (const sp of orientedPos) {
     //         // kernel ou distancia
-    //         const dist = distance(anchor, sp as any);
+    //         const dist = distance(anchor, sp.position as any);
     //         minDist = Math.min(minDist, dist);
     //     }
     //     samples.push({ position: anchor, target: minDist });
@@ -147,19 +148,19 @@ function createSphereConstraintSamples(config: RbfFitConfig): RbfSample[] {
                 target: config.normalOffset,
             });
 
-            samples.push({
-                position: [
-                    surfacePoint[0] - direction[0] * config.normalOffset,
-                    surfacePoint[1] - direction[1] * config.normalOffset,
-                    surfacePoint[2] - direction[2] * config.normalOffset,
-                ],
-                target: -config.normalOffset,
-            });
+            // samples.push({
+            //     position: [
+            //         surfacePoint[0] - direction[0] * config.normalOffset,
+            //         surfacePoint[1] - direction[1] * config.normalOffset,
+            //         surfacePoint[2] - direction[2] * config.normalOffset,
+            //     ],
+            //     target: -config.normalOffset,
+            // });
         }
     }
 
     // Ponto âncora interno: Garante que o campo RBF fique negativo no núcleo da esfera
-    samples.push({ position: [0, 0, 0], target: -radius });
+    //samples.push({ position: [0, 0, 0], target: -radius });
 
     // Cria os Anchor Points adaptados dinamicamente ao raio da esfera
     // const bounds = radius * 2.0;
@@ -233,6 +234,28 @@ function createTorusConstraintSamples(config: RbfFitConfig): RbfSample[] {
                     ],
                     target: -config.normalOffset,
                 });
+
+                // const bounds = majorRadius * 2.0;
+                // const anchorPoints: [number, number, number][] = [
+                //     [-bounds, -bounds, -bounds],
+                //     [-bounds, -bounds, bounds],
+                //     [-bounds, bounds, -bounds],
+                //     [-bounds, bounds, bounds],
+                //     [bounds, -bounds, -bounds],
+                //     [bounds, -bounds, bounds],
+                //     [bounds, bounds, -bounds],
+                //     [bounds, bounds, bounds],
+                // ];
+
+                // for (const anchor of anchorPoints) {
+                //     let minDist = Number.MAX_VALUE;
+                //     for (const sp of surfacePoints) {
+                //         // kernel ou distancia
+                //         const dist = distance(anchor, sp);
+                //         minDist = Math.min(minDist, dist);
+                //     }
+                //     samples.push({ position: anchor, target: minDist });
+                // }
             }
         }
     }
