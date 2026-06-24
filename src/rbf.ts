@@ -62,16 +62,68 @@ export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
 }
 
 function createObjectConstraintSamples(): RbfSample[] {
+    // --- 1. Downsample e Normalização ---
     const samples: RbfSample[] = [];
-    const pos = ObjParser.extractPositions(dragonObj);
-    pos.forEach((point) => {
-        samples.push({
-            position: [point.x, point.y, point.z],
-            target: 0,
-        });
-    });
+    let points = ObjParser.extractPositions(dragonObj);
 
-    const bounds = 1.0;
+    // Reduz o número de pontos para algo gerenciável, evitando a explosão de complexidade.
+    const maxPoints = 200;
+    if (points.length > maxPoints) {
+        const downsampledPoints = [];
+        const step = Math.floor(points.length / maxPoints);
+        for (let i = 0; i < points.length; i += step) {
+            downsampledPoints.push(points[i]);
+        }
+        points = downsampledPoints;
+    }
+    console.log(`Usando ${points.length} pontos para o RBF fit.`);
+
+    // Normaliza a nuvem de pontos para caber em um raio previsível (ex: 0.7)
+    let min = { x: Infinity, y: Infinity, z: Infinity };
+    let max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    for (const p of points) {
+        min.x = Math.min(min.x, p.x);
+        min.y = Math.min(min.y, p.y);
+        min.z = Math.min(min.z, p.z);
+        max.x = Math.max(max.x, p.x);
+        max.y = Math.max(max.y, p.y);
+        max.z = Math.max(max.z, p.z);
+    }
+    const center = {
+        x: (min.x + max.x) / 2,
+        y: (min.y + max.y) / 2,
+        z: (min.z + max.z) / 2,
+    };
+    let maxExtent = 0;
+    for (const p of points) {
+        const dist = Math.sqrt(
+            Math.pow(p.x - center.x, 2) +
+                Math.pow(p.y - center.y, 2) +
+                Math.pow(p.z - center.z, 2),
+        );
+        maxExtent = Math.max(maxExtent, dist);
+    }
+    const desiredRadius = 0.7;
+    const scale = desiredRadius / maxExtent;
+
+    const surfacePoints: [number, number, number][] = [];
+    for (const p of points) {
+        const normalizedPoint: [number, number, number] = [
+            (p.x - center.x) * scale,
+            (p.y - center.y) * scale,
+            (p.z - center.z) * scale,
+        ];
+        surfacePoints.push(normalizedPoint);
+        samples.push({ position: normalizedPoint, target: 0 });
+    }
+
+    // --- 2. Adicionar restrições internas e externas ---
+
+    // Adiciona uma âncora interna crucial para definir o "interior" do objeto.
+    samples.push({ position: [0, 0, 0], target: -desiredRadius * 0.5 });
+
+    // Mantém as âncoras externas para estabilizar o campo longe do objeto.
+    const bounds = desiredRadius * 2.0;
     const anchorPoints: [number, number, number][] = [
         [-bounds, -bounds, -bounds],
         [-bounds, -bounds, bounds],
@@ -85,9 +137,8 @@ function createObjectConstraintSamples(): RbfSample[] {
 
     for (const anchor of anchorPoints) {
         let minDist = Number.MAX_VALUE;
-        for (const sp of pos) {
-            // kernel ou distancia
-            const dist = distance(anchor, sp as any);
+        for (const sp of surfacePoints) {
+            const dist = distance(anchor, sp);
             minDist = Math.min(minDist, dist);
         }
         samples.push({ position: anchor, target: minDist });
