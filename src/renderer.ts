@@ -101,12 +101,15 @@ export class Renderer {
 
         this.device = await this.adapter.requestDevice();
 
-        this.context = <GPUCanvasContext>this.canvas.getContext("webgpu");
+        const context = this.canvas.getContext(
+            "webgpu",
+        ) as GPUCanvasContext | null;
 
-        if (!this.context) {
+        if (!context) {
             console.log("Could not create a WebGPU canvas context.");
             return;
         }
+        this.context = context;
 
         //const format = navigator.gpu.getPreferredCanvasFormat();
         this.format = "bgra8unorm";
@@ -416,7 +419,9 @@ export class Renderer {
         );
 
         // light position
-        uniformData.set([10, 10, 10, 0], 28);
+        uniformData.set([10, 10, 10], 28);
+
+        uniformData.set([this.experimentState.rbfConfig.kernel], 31);
 
         this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
     }

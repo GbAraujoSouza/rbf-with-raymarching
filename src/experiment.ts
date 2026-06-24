@@ -1,4 +1,4 @@
-import type { RbfFitConfig } from "./rbf";
+import { RbfKernel, type RbfFitConfig } from "./rbf";
 
 export enum StepStrategy {
     "naive" = 0,
@@ -50,6 +50,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         debugPointRadius: 0.02,
         normalOffset: 0.1,
         regularization: 0.001,
+        kernel: RbfKernel.linear,
     },
     showControlPoints: false,
 };

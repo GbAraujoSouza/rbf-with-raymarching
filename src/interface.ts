@@ -1,5 +1,6 @@
 import { Renderer } from "./renderer";
 import { StepStrategy } from "./experiment";
+import { RbfKernel } from "./rbf";
 
 export function setupUI(renderer: Renderer) {
     const experimentState = renderer.experimentState;
@@ -41,6 +42,20 @@ export function setupUI(renderer: Renderer) {
                 StepStrategy[
                     (e.target as HTMLSelectElement)
                         .value as keyof typeof StepStrategy
+                ];
+        });
+    }
+
+    const selKernel = document.getElementById(
+        "sel-kernel",
+    ) as HTMLSelectElement;
+    if (selKernel) {
+        selKernel.value = "linear";
+        selKernel.addEventListener("change", (e) => {
+            experimentState.rbfConfig.kernel =
+                RbfKernel[
+                    (e.target as HTMLSelectElement)
+                        .value as keyof typeof RbfKernel
                 ];
         });
     }

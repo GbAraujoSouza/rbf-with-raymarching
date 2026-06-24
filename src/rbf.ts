@@ -9,12 +9,21 @@ export interface RbfSample {
     target: number;
 }
 
+export enum RbfKernel {
+    "linear" = 0,
+    "gaussian" = 1,
+    "cubic" = 2,
+    "quintic" = 3,
+    "thin_plate" = 4,
+}
+
 export interface RbfFitConfig {
     surfaceSampleCount: number;
     gaussianEpsilon: number;
     sphereRadius: number;
     normalOffset: number;
     regularization: number;
+    kernel: RbfKernel;
 }
 
 export interface RbfFitResult {
@@ -25,8 +34,8 @@ export interface RbfFitResult {
 }
 
 export function createBuiltInRbfFit(config: RbfFitConfig): RbfFitResult {
-    const samples: RbfSample[] = createSphereConstraintSamples(config);
-    //const samples = createObjectConstraintSamples();
+    //const samples: RbfSample[] = createSphereConstraintSamples(config);
+    const samples = createObjectConstraintSamples();
     const targets = new Float32Array(samples.length);
     const positions = new Float32Array(samples.length * 4);
 
@@ -180,9 +189,7 @@ function solveRbfWeights(
             const radius = distance(sampleRow.position, sampleColumn.position);
             const diagonal = row === column ? config.regularization : 0;
 
-            matrixRow.push(
-                gaussianKernel(radius, config.gaussianEpsilon) + diagonal,
-            );
+            matrixRow.push(kernel(radius, config) + diagonal);
         }
         M.push(matrixRow);
     }
@@ -193,9 +200,25 @@ function solveRbfWeights(
     return new Float32Array(solvedWeights);
 }
 
-function gaussianKernel(radius: number, epsilon: number): number {
-    const scaled = epsilon * radius;
-    return Math.exp(-(scaled * scaled));
+function kernel(radius: number, config: RbfFitConfig): number {
+    switch (config.kernel) {
+        case RbfKernel.linear:
+            return radius;
+        case RbfKernel.gaussian:
+            const scaled = config.gaussianEpsilon * radius;
+            return Math.exp(-(scaled * scaled));
+        case RbfKernel.cubic:
+            return Math.pow(radius, 3);
+        case RbfKernel.quintic:
+            return Math.pow(radius, 5);
+        case RbfKernel.thin_plate:
+            if (radius == 0) {
+                return 0.0;
+            }
+            return Math.pow(radius, 2) * Math.log(radius);
+        default:
+            return radius;
+    }
 }
 
 function distance(

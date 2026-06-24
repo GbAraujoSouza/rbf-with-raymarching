@@ -13,7 +13,8 @@ struct SceneUniforms {
     cameraUp: vec3f,
     marchParams: vec4f,
     rbfParams: vec4f, // gaussian_epsilon, debug_points, step_strategy, render_mode
-    lightPosition: vec4f,
+    lightPosition: vec3f,
+    kernelType: f32,
 }
 
 
@@ -45,6 +46,42 @@ fn gaussian(point: vec3f, center: vec3f) -> f32 {
     return exp(-epsilonSquared * dot(d, d));
 }
 
+fn kernel(point: vec3f, center: vec3f) -> f32 {
+    switch(u32(sceneUniforms.kernelType)) {
+        case 0u {
+            // linear
+            return length(point - center);
+        }
+        case 1u {
+            // gaussian
+            return gaussian(point, center);
+        }
+        case 2u {
+            // cubic
+            let radius = length(point - center);
+            return radius * radius * radius;
+        }
+        case 3u {
+            // quintic
+            let radius = length(point - center);
+            let r2 = radius * radius;
+            return r2 * r2 * radius;
+        }
+        case 4u {
+            // thin plate
+            let radius = length(point - center);
+            if (radius == 0.0) {
+                return 0.0;
+            }
+            return radius * radius * log(radius);
+        }
+        default {
+            // default to lenear
+            return length(point - center);
+        }
+    }
+}
+
 fn rbfField(point: vec3f) -> f32 {
     let sampleCount = i32(sceneUniforms.screenAndCounts.z);
     var total = 0.0;
@@ -52,7 +89,7 @@ fn rbfField(point: vec3f) -> f32 {
     for (var index = 0; index < sampleCount; index += 1) {
         let center = samplePositions.values[index].xyz;
         let weight = sampleWeights.values[index];
-        total += gaussian(point, center) * weight;
+        total += kernel(point, center) * weight;
     }
 
     return total;
@@ -140,9 +177,9 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
             //stepDistance = correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
             stepDistance = calculateStep(distanceToSurface, point);
             
-            let distToBounding = length(point) - 1;
+            let distToBounding = length(point) - 1.0;
             if (distToBounding > 0.0) {
-                stepDistance = max(stepDistance, distToBounding);
+                stepDistance = distToBounding;
             }
         }
 
