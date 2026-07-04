@@ -4,9 +4,10 @@ import numeric from "numeric";
 import dragonObj from "./dragon_points.obj";
 import carObj from "./points_block_car.obj";
 import { ObjParser } from "./obj-parser";
+import { Vec3, vec3, vec4 } from "wgpu-matrix";
 
 export interface RbfSample {
-    position: [number, number, number];
+    position: Vec3;
     target: number;
 }
 
@@ -32,6 +33,8 @@ export interface RbfFitResult {
     positions: Float32Array<ArrayBuffer>;
     targets: Float32Array<ArrayBuffer>;
     weights: Float32Array<ArrayBuffer>;
+    boxMin: Vec3;
+    boxMax: Vec3;
 }
 
 export function createBuiltInRbfFit(
@@ -57,10 +60,13 @@ export function createBuiltInRbfFit(
     for (let index = 0; index < samples.length; index += 1) {
         const sample = samples[index];
         targets[index] = sample.target;
-        positions[index * 4 + 0] = sample.position[0];
-        positions[index * 4 + 1] = sample.position[1];
-        positions[index * 4 + 2] = sample.position[2];
-        positions[index * 4 + 3] = 0;
+        // positions[index * 4 + 0] = sample.position[0];
+        // positions[index * 4 + 1] = sample.position[1];
+        // positions[index * 4 + 2] = sample.position[2];
+        // positions[index * 4 + 3] = 0;
+
+        const pos = vec4.fromValues(...sample.position, 0.0);
+        positions.set(pos, index * 4);
     }
 
     const start: number = performance.now();
@@ -68,12 +74,38 @@ export function createBuiltInRbfFit(
     const end: number = performance.now();
     console.log(`Linear system solve took: ${end - start} ms`);
 
+    let positionsArray: Vec3[] = samples.map((sample) => sample.position);
+    let { boxMin, boxMax } = createBoundingVolumeFromPoints(
+        positionsArray,
+        config.normalOffset,
+    );
+
     return {
         samples,
         positions,
         targets,
         weights,
+        boxMin,
+        boxMax,
     };
+}
+
+function createBoundingVolumeFromPoints(
+    points: Vec3[],
+    padding: number,
+): { boxMin: Vec3; boxMax: Vec3 } {
+    let boxMin: Vec3 = vec3.create(Infinity, Infinity, Infinity);
+    let boxMax: Vec3 = vec3.create(-Infinity, -Infinity, -Infinity);
+
+    for (let i = 0; i < points.length; i++) {
+        vec3.min(points[i], boxMin, boxMin);
+        vec3.max(points[i], boxMax, boxMax);
+    }
+
+    vec3.add(boxMin, [-padding, -padding, -padding], boxMin);
+    vec3.add(boxMax, [padding, padding, padding], boxMax);
+
+    return { boxMin, boxMax };
 }
 
 function createObjectConstraintSamples(config: RbfFitConfig): RbfSample[] {
@@ -81,21 +113,21 @@ function createObjectConstraintSamples(config: RbfFitConfig): RbfSample[] {
     const orientedPos = ObjParser.extractPositionsAndNormals(carObj);
     orientedPos.forEach((orientedPoint) => {
         samples.push({
-            position: [
+            position: vec3.create(
                 orientedPoint.position.x,
                 orientedPoint.position.y,
                 orientedPoint.position.z,
-            ],
+            ),
             target: 0,
         });
         if (config.normalOffset > 0) {
             const offset: number = config.normalOffset;
             samples.push({
-                position: [
+                position: vec3.create(
                     orientedPoint.position.x + offset * orientedPoint.normal.x,
                     orientedPoint.position.y + offset * orientedPoint.normal.y,
                     orientedPoint.position.z + offset * orientedPoint.normal.z,
-                ],
+                ),
                 target: offset,
             });
         }
@@ -133,18 +165,25 @@ function createSphereConstraintSamples(config: RbfFitConfig): RbfSample[] {
 
     for (let index = 0; index < config.surfaceSampleCount; index += 1) {
         const direction = fibonacciDirection(index, config.surfaceSampleCount);
-        const surfacePoint = scale(direction, radius);
+        const surfacePoint = vec3.scale(direction, radius);
 
-        surfacePoints.push(surfacePoint);
-        samples.push({ position: surfacePoint, target: 0 });
+        surfacePoints.push([surfacePoint[0], surfacePoint[1], surfacePoint[2]]);
+        samples.push({
+            position: vec3.create(
+                surfacePoint[0],
+                surfacePoint[1],
+                surfacePoint[2],
+            ),
+            target: 0,
+        });
 
         if (config.normalOffset > 0) {
             samples.push({
-                position: [
+                position: vec3.create(
                     surfacePoint[0] + direction[0] * config.normalOffset,
                     surfacePoint[1] + direction[1] * config.normalOffset,
                     surfacePoint[2] + direction[2] * config.normalOffset,
-                ],
+                ),
                 target: config.normalOffset,
             });
 
@@ -210,7 +249,14 @@ function createTorusConstraintSamples(config: RbfFitConfig): RbfSample[] {
 
             const surfacePoint: [number, number, number] = [x, y, z];
             surfacePoints.push(surfacePoint);
-            samples.push({ position: surfacePoint, target: 0 });
+            samples.push({
+                position: vec3.create(
+                    surfacePoint[0],
+                    surfacePoint[1],
+                    surfacePoint[2],
+                ),
+                target: 0,
+            });
 
             if (config.normalOffset > 0) {
                 const nx = Math.cos(v) * Math.cos(u);
@@ -218,20 +264,20 @@ function createTorusConstraintSamples(config: RbfFitConfig): RbfSample[] {
                 const ny = Math.sin(v);
 
                 samples.push({
-                    position: [
+                    position: vec3.create(
                         x + nx * config.normalOffset,
                         y + ny * config.normalOffset,
                         z + nz * config.normalOffset,
-                    ],
+                    ),
                     target: config.normalOffset,
                 });
 
                 samples.push({
-                    position: [
+                    position: vec3.create(
                         x - nx * config.normalOffset,
                         y - ny * config.normalOffset,
                         z - nz * config.normalOffset,
-                    ],
+                    ),
                     target: -config.normalOffset,
                 });
 
@@ -261,7 +307,10 @@ function createTorusConstraintSamples(config: RbfFitConfig): RbfSample[] {
     }
 
     // Anchor point in the center hole
-    samples.push({ position: [0, 0, 0], target: majorRadius - minorRadius });
+    samples.push({
+        position: vec3.create(0, 0, 0),
+        target: majorRadius - minorRadius,
+    });
     return samples;
 }
 
@@ -293,7 +342,10 @@ function solveRbfWeights(
 
         for (let column = 0; column < count; column += 1) {
             const sampleColumn = samples[column];
-            const radius = distance(sampleRow.position, sampleColumn.position);
+            const radius = vec3.distance(
+                sampleRow.position,
+                sampleColumn.position,
+            );
             const diagonal = row === column ? config.regularization : 0;
 
             matrixRow.push(kernel(radius, config) + diagonal);
@@ -326,21 +378,4 @@ function kernel(radius: number, config: RbfFitConfig): number {
         default:
             return radius;
     }
-}
-
-function distance(
-    first: [number, number, number],
-    second: [number, number, number],
-): number {
-    const dx = first[0] - second[0];
-    const dy = first[1] - second[1];
-    const dz = first[2] - second[2];
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-function scale(
-    vector: [number, number, number],
-    factor: number,
-): [number, number, number] {
-    return [vector[0] * factor, vector[1] * factor, vector[2] * factor];
 }

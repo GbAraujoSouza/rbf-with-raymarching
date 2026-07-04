@@ -1,4 +1,4 @@
-import { vec3 } from "gl-matrix";
+import { vec3, Vec3, vec4 } from "wgpu-matrix";
 import { createBuiltInRbfFit, type RbfFitResult } from "./rbf";
 import screenShaderCode from "./shaders/screen_shader.wgsl";
 import computeShaderCode from "./shaders/ray_marching_compute.wgsl";
@@ -32,8 +32,8 @@ export class Renderer {
 
     yaw: number = 0.7;
     pitch: number = 0.5;
-    radius: number = 4.2;
-    readonly target: vec3 = vec3.fromValues(0, 0, 0);
+    radius: number = 10;
+    readonly target: Vec3 = vec3.fromValues(0, 0, 0);
     readonly fieldOfView: number = Math.PI / 4;
 
     isPointerDown: boolean = false;
@@ -123,7 +123,7 @@ export class Renderer {
 
     async makePipeline() {
         this.uniformBuffer = this.device.createBuffer({
-            size: 8 * 16,
+            size: 10 * 16, // 8 elements of vec4 (4 bytes each)
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -258,7 +258,10 @@ export class Renderer {
     }
 
     createAssets() {
-        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig, this.experimentState.sceneId);
+        this.rbfFit = createBuiltInRbfFit(
+            this.experimentState.rbfConfig,
+            this.experimentState.sceneId,
+        );
         this.positionsBuffer = this.device.createBuffer({
             size: this.rbfFit.positions.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -365,19 +368,19 @@ export class Renderer {
             this.radius * Math.cos(this.pitch) * Math.cos(this.yaw),
         );
         const forward = vec3.create();
-        vec3.subtract(forward, this.target, eye);
+        vec3.subtract(this.target, eye, forward);
         vec3.normalize(forward, forward);
 
         const worldUp = vec3.fromValues(0, 1, 0);
         const right = vec3.create();
-        vec3.cross(right, forward, worldUp);
+        vec3.cross(forward, worldUp, right);
         vec3.normalize(right, right);
 
         const up = vec3.create();
-        vec3.cross(up, right, forward);
+        vec3.cross(right, forward, up);
         vec3.normalize(up, up);
 
-        const uniformData = new Float32Array(8 * 4);
+        const uniformData = new Float32Array(10 * 4);
 
         // scene and counts
         uniformData.set(
@@ -423,6 +426,10 @@ export class Renderer {
 
         uniformData.set([this.experimentState.rbfConfig.kernel], 31);
 
+        // bounding box points
+        uniformData.set(vec4.fromValues(...this.rbfFit.boxMin, 0.0), 32);
+        uniformData.set(vec4.fromValues(...this.rbfFit.boxMax, 0.0), 36);
+
         this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
     }
 
@@ -467,7 +474,10 @@ export class Renderer {
     }
 
     rebuildRbfAssets() {
-        this.rbfFit = createBuiltInRbfFit(this.experimentState.rbfConfig, this.experimentState.sceneId);
+        this.rbfFit = createBuiltInRbfFit(
+            this.experimentState.rbfConfig,
+            this.experimentState.sceneId,
+        );
 
         this.positionsBuffer.destroy();
         this.weightsBuffer.destroy();

@@ -15,6 +15,8 @@ struct SceneUniforms {
     rbfParams: vec4f, // gaussian_epsilon, debug_points, step_strategy, render_mode
     lightPosition: vec3f,
     kernelType: f32,
+    boxMin: vec4f,
+    boxMax: vec4f,
 }
 
 
@@ -142,15 +144,48 @@ fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
     }
 }
 
+
+struct RayBoxIntercept {
+    hit: bool,
+    tMin: f32,
+    tMax: f32,
+}
+
+fn intersectAABB(rayOrigin: vec3f, rayDirection: vec3f, boxMin: vec3f, boxMax: vec3f) -> RayBoxIntercept {
+    let invDir: vec3f = 1.0 / rayDirection;
+
+    let t0: vec3f = (boxMin - rayOrigin) * invDir;
+    let t1: vec3f = (boxMax - rayOrigin) * invDir;
+
+    let tNear: vec3f = min(t0, t1);
+    let tFar: vec3f = max(t0, t1);
+
+    let tMin: f32 = max(max(tNear.x, tNear.y), tNear.z);
+    let tMax: f32 = min(min(tFar.x, tFar.y), tFar.z);
+
+    return RayBoxIntercept(tMax >= max(tMin, 0.0), tMin, tMax);
+}
+
+/*
+    Ray march function
+*/
 fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: bool) -> MarchingResult {
     let maxDistance = sceneUniforms.marchParams.z;
     let epsilon = sceneUniforms.marchParams.w;
-    let correctionPower = sceneUniforms.marchParams.x;
-    let correctionLinear = sceneUniforms.marchParams.y;
-    var depth = 0.0;
+    let boxMin = sceneUniforms.boxMin.xyz;
+    let boxMax = sceneUniforms.boxMax.xyz;
 
     var result: MarchingResult;
 
+    let hitBox: RayBoxIntercept = intersectAABB(rayOrigin, rayDirection, boxMin, boxMax);
+    if (!hitBox.hit) {
+        result.distance = maxDistance;
+        result.steps = 0;
+        return result;
+    }
+
+    var depth = max(hitBox.tMin, 0.0);
+    var endDepth = min(hitBox.tMax, maxDistance);
     for (var step = 0; step < MAX_MARCHING_STEPS; step += 1) {
         let point = rayOrigin + depth * rayDirection;
         let fieldValue = sceneSdf(point, usePoints);
@@ -172,20 +207,18 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 
         var stepDistance = distanceToSurface;
         if (!usePoints) {
-
             // make the correcion to the step
-            //stepDistance = correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
             stepDistance = calculateStep(distanceToSurface, point);
             
-            let distToBounding = length(point) - 1.0;
-            if (distToBounding > 0.0) {
-                stepDistance = distToBounding;
-            }
+            // let distToBounding = length(point) - 1.0;
+            // if (distToBounding > 0.0) {
+            //     stepDistance = distToBounding;
+            // }
         }
 
         depth += max(stepDistance, epsilon);
 
-        if (depth >= maxDistance) {
+        if (depth >= endDepth) {
             result.distance = maxDistance;
             result.steps = step;
             return result;
@@ -199,15 +232,17 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 
 fn estimateNormal(point: vec3f, usePoints: bool, normal: bool) -> vec3f {
     let epsilon = sceneUniforms.marchParams.w;
-    let xOffset = vec3f(epsilon, 0.0, 0.0);
-    let yOffset = vec3f(0.0, epsilon, 0.0);
-    let zOffset = vec3f(0.0, 0.0, epsilon);
+    let e = vec2f(epsilon, 0.0);
+    let gradient = sceneSdf(point, usePoints) - vec3f(sceneSdf(point - e.xyy, usePoints), sceneSdf(point - e.yxy, usePoints), sceneSdf(point - e.yyx, usePoints));
+    // let xOffset = vec3f(epsilon, 0.0, 0.0);
+    // let yOffset = vec3f(0.0, epsilon, 0.0);
+    // let zOffset = vec3f(0.0, 0.0, epsilon);
 
-    let gradient = vec3f(
-        sceneSdf(point + xOffset, usePoints) - sceneSdf(point - xOffset, usePoints),
-        sceneSdf(point + yOffset, usePoints) - sceneSdf(point - yOffset, usePoints),
-        sceneSdf(point + zOffset, usePoints) - sceneSdf(point - zOffset, usePoints),
-    );
+    // let gradient = vec3f(
+    //     sceneSdf(point + xOffset, usePoints) - sceneSdf(point - xOffset, usePoints),
+    //     sceneSdf(point + yOffset, usePoints) - sceneSdf(point - yOffset, usePoints),
+    //     sceneSdf(point + zOffset, usePoints) - sceneSdf(point - zOffset, usePoints),
+    // );
 
     if (normal) {
         return normalize(gradient);
@@ -255,6 +290,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     //let rayDir = rayDirection(input.uv);
     let showPoints = sceneUniforms.screenAndCounts.w > 0.5;
 
+    // Call "RayMarch" function
     let rbfResult = shortestDistanceToSurface(rayOrigin, rayDirection, false);
     let rbfDistance = rbfResult.distance;
 
@@ -275,9 +311,11 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
         return;
     }
 
-    let point = rayOrigin + hitDistance * rayDirection;
+    let point = rayOrigin + rayDirection * hitDistance;
     let normal = estimateNormal(point, hitPoints, true);
     let baseColor = select(vec3f(0.93, 0.32, 0.25), vec3f(0.96, 0.84, 0.23), hitPoints);
+
+    // final color with light
     let shaded = phong(baseColor, point, normal);
 
     if (sceneUniforms.rbfParams.w == 1) {
