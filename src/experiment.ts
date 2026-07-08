@@ -35,7 +35,7 @@ export interface ExperimentState {
 }
 
 export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
-    sceneId: "torus",
+    sceneId: "sphere",
     renderMode: RenderMode.shaded,
     rayMarchingConfig: {
         strategy: StepStrategy.naive,

@@ -60,10 +60,6 @@ export function createBuiltInRbfFit(
     for (let index = 0; index < samples.length; index += 1) {
         const sample = samples[index];
         targets[index] = sample.target;
-        // positions[index * 4 + 0] = sample.position[0];
-        // positions[index * 4 + 1] = sample.position[1];
-        // positions[index * 4 + 2] = sample.position[2];
-        // positions[index * 4 + 3] = 0;
 
         const pos = vec4.fromValues(...sample.position, 0.0);
         positions.set(pos, index * 4);
