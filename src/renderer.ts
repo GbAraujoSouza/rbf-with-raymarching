@@ -1,8 +1,13 @@
-import { vec3, Vec3, vec4 } from "wgpu-matrix";
+import { mat4, Mat4, vec3, Vec3 } from "wgpu-matrix";
 import { createBuiltInRbfFit, type RbfFitResult } from "./rbf";
 import screenShaderCode from "./shaders/screen_shader.wgsl";
 import computeShaderCode from "./shaders/ray_marching_compute.wgsl";
 import { DEFAULT_EXPERIMENT_STATE, ExperimentState } from "./experiment";
+import {
+    SCENE_UNIFORM_BYTES,
+    SceneUniforms,
+    SceneUniformInput,
+} from "./scene-uniforms";
 
 export class Renderer {
     canvas: HTMLCanvasElement;
@@ -29,6 +34,9 @@ export class Renderer {
     gpuTexture!: GPUTexture;
     gpuTextureView!: GPUTextureView;
     sampler!: GPUSampler;
+
+    objectToWorld!: Mat4;
+    worldToObject!: Mat4;
 
     yaw: number = 0.7;
     pitch: number = 0.5;
@@ -123,7 +131,7 @@ export class Renderer {
 
     async makePipeline() {
         this.uniformBuffer = this.device.createBuffer({
-            size: 10 * 16, // 8 elements of vec4 (4 bytes each)
+            size: SCENE_UNIFORM_BYTES,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
@@ -361,74 +369,65 @@ export class Renderer {
         requestAnimationFrame(this.render);
     };
 
+    buildTransformations() {
+        this.objectToWorld = mat4.translation(vec3.create(0.0, 0.0, 0.0));
+        this.worldToObject = mat4.inverse(this.objectToWorld);
+    }
+
     updateSceneUniforms() {
-        const eye = vec3.fromValues(
+        this.buildTransformations();
+
+        const eye: Vec3 = vec3.fromValues(
             this.radius * Math.cos(this.pitch) * Math.sin(this.yaw),
             this.radius * Math.sin(this.pitch),
             this.radius * Math.cos(this.pitch) * Math.cos(this.yaw),
         );
-        const forward = vec3.create();
+        const forward: Vec3 = vec3.create();
         vec3.subtract(this.target, eye, forward);
         vec3.normalize(forward, forward);
 
-        const worldUp = vec3.fromValues(0, 1, 0);
-        const right = vec3.create();
+        const worldUp: Vec3 = vec3.fromValues(0, 1, 0);
+        const right: Vec3 = vec3.create();
         vec3.cross(forward, worldUp, right);
         vec3.normalize(right, right);
 
-        const up = vec3.create();
+        const up: Vec3 = vec3.create();
         vec3.cross(right, forward, up);
         vec3.normalize(up, up);
 
-        const uniformData = new Float32Array(10 * 4);
+        const uniformInput: SceneUniformInput = {
+            screenWidth: this.canvas.width,
+            screenHeight: this.canvas.height,
 
-        // scene and counts
-        uniformData.set(
-            [
-                this.canvas.width,
-                this.canvas.height,
-                this.rbfFit.weights.length,
-                this.experimentState.showControlPoints ? 1 : 0,
-            ],
-            0,
-        );
+            sampleCount: this.rbfFit.samples.length,
+            debugPoints: this.experimentState.showControlPoints ? 1 : 0,
 
-        // camera vectors
-        uniformData.set([eye[0], eye[1], eye[2], 0], 4);
-        uniformData.set([forward[0], forward[1], forward[2], 0], 8);
-        uniformData.set([right[0], right[1], right[2], 0], 12);
-        uniformData.set([up[0], up[1], up[2], 0], 16);
+            cameraPosition: eye,
+            cameraForward: forward,
+            cameraRight: right,
+            cameraUp: up,
 
-        // march params
-        uniformData.set(
-            [
+            gaussianKernelCorrectionPower:
                 this.experimentState.rayMarchingConfig.correctionPower,
+            gaussianKernelCorrectionLinear:
                 this.experimentState.rayMarchingConfig.correctionLinear,
-                this.experimentState.rayMarchingConfig.maxDistance,
-                this.experimentState.rayMarchingConfig.epsilon,
-            ],
-            20,
-        );
+            maxDistance: this.experimentState.rayMarchingConfig.maxDistance,
+            epsilon: this.experimentState.rayMarchingConfig.epsilon,
 
-        // rbf params
-        uniformData.set(
-            [
-                this.experimentState.rbfConfig.gaussianEpsilon,
-                this.experimentState.rbfConfig.debugPointRadius,
-                this.experimentState.rayMarchingConfig.strategy,
-                this.experimentState.renderMode,
-            ],
-            24,
-        );
+            gaussianEpsilon: this.experimentState.rbfConfig.gaussianEpsilon,
+            debugPointRadius: this.experimentState.rbfConfig.debugPointRadius,
+            stepStrategy: this.experimentState.rayMarchingConfig.strategy,
+            renderMode: this.experimentState.renderMode,
 
-        // light position
-        uniformData.set([10, 10, 10], 28);
+            lightPosition: vec3.create(10, 10, 10),
+            kernelType: this.experimentState.rbfConfig.kernel,
 
-        uniformData.set([this.experimentState.rbfConfig.kernel], 31);
+            boxMin: this.rbfFit.boxMin,
+            boxMax: this.rbfFit.boxMax,
+        };
 
-        // bounding box points
-        uniformData.set(vec4.fromValues(...this.rbfFit.boxMin, 0.0), 32);
-        uniformData.set(vec4.fromValues(...this.rbfFit.boxMax, 0.0), 36);
+        const uniformData: Float32Array<ArrayBuffer> =
+            SceneUniforms.createSceneUniformData(uniformInput);
 
         this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
     }
