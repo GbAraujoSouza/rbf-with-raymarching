@@ -2,7 +2,7 @@ import { RbfKernel, type RbfFitConfig } from "./rbf";
 
 export enum StepStrategy {
     "naive" = 0,
-    "exponential_correction" = 1,
+    "exponentialCorrection" = 1,
     "gradient" = 2,
 }
 
@@ -20,23 +20,47 @@ export interface RayMarchingConfig {
     correctionPower: number;
 }
 
+export interface MarchingCubesConfig {
+    resolution: number;
+    isoValue: number;
+    extraPadding: number;
+}
+
 export interface ExperimentRbfConfig extends RbfFitConfig {
     debugPointRadius: number;
 }
 
-export type SceneId = "sphere" | "torus" | "dragon";
+export type SceneId =
+    | "sphere"
+    | "torus"
+    | "dragon"
+    | "bunny"
+    | "buddha"
+    | "teapot";
+
+export enum RenderBackend {
+    rayMarching = 0,
+    marchingCubes = 1,
+}
 
 export interface ExperimentState {
     sceneId: SceneId;
     rayMarchingConfig: RayMarchingConfig;
+    marchingCubesConfig: MarchingCubesConfig;
     rbfConfig: ExperimentRbfConfig;
     renderMode: RenderMode;
     showControlPoints: boolean;
+    renderBackend: RenderBackend;
 }
 
 export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
-    sceneId: "sphere",
+    sceneId: "torus",
     renderMode: RenderMode.shaded,
+    marchingCubesConfig: {
+        resolution: 32,
+        isoValue: 0,
+        extraPadding: 0,
+    },
     rayMarchingConfig: {
         strategy: StepStrategy.naive,
         epsilon: 1e-5,
@@ -48,11 +72,12 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
     rbfConfig: {
         surfaceSampleCount: 8,
         gaussianEpsilon: 1.35,
-        sphereRadius: 0.7,
+        sphereRadius: 1,
         debugPointRadius: 0.02,
         normalOffset: 0.1,
         regularization: 0.001,
-        kernel: RbfKernel.linear,
+        kernel: RbfKernel.thinPlate,
     },
     showControlPoints: false,
+    renderBackend: RenderBackend.rayMarching,
 };

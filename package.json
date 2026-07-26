@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "webpack serve --mode development",
     "build": "webpack --mode production",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "offline-parser": "python3 scripts/offline-parser.py"
   },
   "engines": {
     "node": ">=22"
@@ -25,6 +26,7 @@
   },
   "dependencies": {
     "numeric": "^1.2.6",
+    "simplex-noise": "^4.0.3",
     "wgpu-matrix": "^3.4.2"
   }
 }

@@ -21,6 +21,15 @@
 
             <div class="modal-section">
                 <h3>Rendering Options</h3>
+                <div class="control-group">
+                    <label>Render Backend</label>
+                    <select id="sel-render-backend">
+                        <option value="rayMarching">Ray Marching</option>
+                        <option value="marchingCubes" selected>
+                            Marching Cubes
+                        </option>
+                    </select>
+                </div>
                 <label class="checkbox-label">
                     <input type="checkbox" id="chk-control-points" checked />
                     Show Control Points
@@ -37,7 +46,7 @@
                     <label>Strategy</label>
                     <select id="sel-strategy">
                         <option value="naive">Naive</option>
-                        <option value="exponential_correction" selected>
+                        <option value="exponentialCorrection" selected>
                             Exponential Correction
                         </option>
                         <option value="gradient">Gradient</option>
@@ -50,7 +59,7 @@
                         <option value="gaussian">Gaussian</option>
                         <option value="cubic">Cubic</option>
                         <option value="quintic">Quintic</option>
-                        <option value="thin_plate">Thin Plate</option>
+                        <option value="thinPlate">Thin Plate</option>
                     </select>
                 </div>
                 <div class="control-group">
@@ -140,9 +149,12 @@
                 <div class="control-group">
                     <label>Scene</label>
                     <select id="sel-scene">
-                        <option value="sphere" selected>Sphere</option>
-                        <option value="torus">Torus</option>
+                        <option value="sphere">Sphere</option>
+                        <option value="torus" selected>Torus</option>
                         <option value="dragon">Dragon</option>
+                        <option value="bunny">Bunny</option>
+                        <option value="buddha">Buddha</option>
+                        <option value="teapot">Teapot</option>
                     </select>
                 </div>
                 <div class="control-group">
@@ -156,7 +168,7 @@
                         type="range"
                         id="rng-rbf-samples"
                         min="8"
-                        max="256"
+                        max="2000"
                         step="1"
                         value="32"
                     />

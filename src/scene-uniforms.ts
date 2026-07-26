@@ -1,4 +1,4 @@
-import { Vec3 } from "wgpu-matrix";
+import { Mat4, Vec3 } from "wgpu-matrix";
 import { RbfKernel } from "./rbf";
 import { RenderMode, StepStrategy } from "./experiment";
 
@@ -13,9 +13,10 @@ export const SCENE_UNIFORM_SLOTS = {
     lightAndKernel: 28,
     boxMin: 32,
     boxMax: 36,
+    worldToObject: 40,
 };
 
-export const SCENE_UNIFORM_FLOATS = 40;
+export const SCENE_UNIFORM_FLOATS = 56;
 export const SCENE_UNIFORM_BYTES = SCENE_UNIFORM_FLOATS * 4;
 
 export interface SceneUniformInput {
@@ -44,6 +45,8 @@ export interface SceneUniformInput {
 
     boxMin: Vec3;
     boxMax: Vec3;
+
+    worldToObject: Mat4;
 }
 
 export class SceneUniforms {
@@ -164,6 +167,8 @@ export class SceneUniforms {
             input.boxMax[1],
             input.boxMax[2],
         );
+
+        uniformData.set(input.worldToObject, SCENE_UNIFORM_SLOTS.worldToObject);
         return uniformData;
     }
 }

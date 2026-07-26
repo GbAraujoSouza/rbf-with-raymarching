@@ -1,13 +1,19 @@
 import { mat4, Mat4, vec3, Vec3 } from "wgpu-matrix";
-import { createBuiltInRbfFit, type RbfFitResult } from "./rbf";
+import { createBuiltInRbfFit, RbfFitConfig, type RbfFitResult } from "./rbf";
 import screenShaderCode from "./shaders/screen_shader.wgsl";
 import computeShaderCode from "./shaders/ray_marching_compute.wgsl";
-import { DEFAULT_EXPERIMENT_STATE, ExperimentState } from "./experiment";
+import {
+    DEFAULT_EXPERIMENT_STATE,
+    ExperimentState,
+    RenderBackend,
+} from "./experiment";
 import {
     SCENE_UNIFORM_BYTES,
     SceneUniforms,
     SceneUniformInput,
 } from "./scene-uniforms";
+import { MeshCameraUniformInput, MeshRenderer } from "./mesh-renderer";
+import { buildMarchingCubesMesh, ExtractedMesh } from "./mesh";
 
 export class Renderer {
     canvas: HTMLCanvasElement;
@@ -38,6 +44,8 @@ export class Renderer {
     objectToWorld!: Mat4;
     worldToObject!: Mat4;
 
+    meshRenderer!: MeshRenderer;
+
     yaw: number = 0.7;
     pitch: number = 0.5;
     radius: number = 10;
@@ -61,10 +69,31 @@ export class Renderer {
         this.experimentState = experimentState;
     }
 
+    rebuildMarchingCubesMesh(): void {
+        const fit: RbfFitResult = this.rbfFit;
+        const config: RbfFitConfig = this.experimentState.rbfConfig;
+
+        const mesh: ExtractedMesh = buildMarchingCubesMesh(
+            fit,
+            config,
+            this.experimentState.marchingCubesConfig.resolution,
+            this.experimentState.marchingCubesConfig.isoValue,
+            this.experimentState.marchingCubesConfig.extraPadding,
+        );
+
+        this.meshRenderer.setMesh(mesh);
+    }
+
     async initialize() {
         await this.setupDevice();
 
+        this.meshRenderer = new MeshRenderer(this.device, this.format);
+        this.meshRenderer.initialize();
+
         this.createAssets();
+
+        // same as createAssets for marching cubes
+        this.rebuildMarchingCubesMesh();
 
         await this.makePipeline();
         this.setupInteraction();
@@ -335,39 +364,100 @@ export class Renderer {
 
         const encoder = this.device.createCommandEncoder();
 
-        const computePass: GPUComputePassEncoder = encoder.beginComputePass();
-        computePass.setBindGroup(0, this.computeBindGroup);
-        computePass.setPipeline(this.computePipeline);
-        computePass.dispatchWorkgroups(
-            Math.ceil(this.canvas.width / 16),
-            Math.ceil(this.canvas.height / 16),
-            1,
-        );
-        computePass.end();
+        if (this.experimentState.renderBackend == RenderBackend.rayMarching) {
+            const computePass: GPUComputePassEncoder =
+                encoder.beginComputePass();
+            computePass.setBindGroup(0, this.computeBindGroup);
+            computePass.setPipeline(this.computePipeline);
+            computePass.dispatchWorkgroups(
+                Math.ceil(this.canvas.width / 16),
+                Math.ceil(this.canvas.height / 16),
+                1,
+            );
+            computePass.end();
 
-        // for every step start a render pass
-        const pass = encoder.beginRenderPass({
-            colorAttachments: [
-                {
-                    view: this.context.getCurrentTexture().createView(),
-                    loadOp: "clear",
-                    clearValue: [0.1176, 0.1176, 0.1804, 1.0],
-                    storeOp: "store",
+            // for every step start a render pass
+            const pass = encoder.beginRenderPass({
+                colorAttachments: [
+                    {
+                        view: this.context.getCurrentTexture().createView(),
+                        loadOp: "clear",
+                        clearValue: [0.8118, 0.9333, 1.0, 1.0],
+                        storeOp: "store",
+                    },
+                ],
+            });
+
+            // draw stuff
+            pass.setPipeline(this.pipeline);
+            pass.setBindGroup(0, this.bindGroup);
+            pass.draw(6, 1, 0, 0);
+
+            pass.end();
+            const commandBuffer = encoder.finish();
+            this.device.queue.submit([commandBuffer]);
+        }
+
+        if (this.experimentState.renderBackend == RenderBackend.marchingCubes) {
+            this.meshRenderer.resize(this.canvas.width, this.canvas.height);
+
+            const pass = encoder.beginRenderPass({
+                colorAttachments: [
+                    {
+                        view: this.context.getCurrentTexture().createView(),
+                        loadOp: "clear",
+                        clearValue: [0.8118, 0.9333, 1.0, 1.0],
+                        storeOp: "store",
+                    },
+                ],
+                depthStencilAttachment: {
+                    view: this.meshRenderer.depthTextureView,
+                    depthClearValue: 1.0,
+                    depthLoadOp: "clear",
+                    depthStoreOp: "store",
                 },
-            ],
-        });
+            });
 
-        // draw stuff
-        pass.setPipeline(this.pipeline);
-        pass.setBindGroup(0, this.bindGroup);
-        pass.draw(6, 1, 0, 0);
+            const uniforms = this.createMeshCameraUniformInput();
+            this.meshRenderer.render(pass, uniforms);
 
-        pass.end();
-        const commandBuffer = encoder.finish();
-        this.device.queue.submit([commandBuffer]);
+            const commandBuffer = encoder.finish();
+            this.device.queue.submit([commandBuffer]);
+        }
 
         requestAnimationFrame(this.render);
     };
+
+    /**
+     * Setup camera position (eye position)
+     * and model - view - projection matrices.
+     * Also creates a fixed light
+     * @returns MeshCameraUniformInput
+     */
+    createMeshCameraUniformInput(): MeshCameraUniformInput {
+        const eye: Vec3 = vec3.fromValues(
+            this.radius * Math.cos(this.pitch) * Math.sin(this.yaw),
+            this.radius * Math.sin(this.pitch),
+            this.radius * Math.cos(this.pitch) * Math.cos(this.yaw),
+        );
+
+        const worldUp: Vec3 = vec3.fromValues(0, 1, 0);
+        const view: Mat4 = mat4.lookAt(eye, this.target, worldUp);
+        const aspect = this.canvas.width / this.canvas.height;
+        const projection: Mat4 = mat4.perspective(
+            this.fieldOfView,
+            aspect,
+            0.1,
+            this.experimentState.rayMarchingConfig.maxDistance,
+        );
+
+        return {
+            viewProjection: mat4.multiply(projection, view),
+            model: this.objectToWorld,
+            cameraPosition: eye,
+            lightPosition: vec3.create(10, 10, 10),
+        };
+    }
 
     buildTransformations() {
         this.objectToWorld = mat4.translation(vec3.create(0.0, 0.0, 0.0));
@@ -424,6 +514,8 @@ export class Renderer {
 
             boxMin: this.rbfFit.boxMin,
             boxMax: this.rbfFit.boxMax,
+
+            worldToObject: this.worldToObject,
         };
 
         const uniformData: Float32Array<ArrayBuffer> =
@@ -522,6 +614,11 @@ export class Renderer {
                 },
             ],
         });
+        if (
+            this.experimentState.renderBackend === RenderBackend.marchingCubes
+        ) {
+            this.rebuildMarchingCubesMesh();
+        }
     }
 }
 

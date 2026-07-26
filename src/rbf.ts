@@ -3,7 +3,11 @@ import numeric from "numeric";
 
 import dragonObj from "./dragon_points.obj";
 import carObj from "./points_block_car.obj";
+import bunnyPly from "../bunny/bunny/reconstruction/bun_zipper.ply";
+import teapotXyzn from "../obj-models/teapot.xyzn";
 import { ObjParser } from "./obj-parser";
+import { PlyOrientedPoint, PlyParser } from "./ply-parser";
+import { XyznParser, XyznPoint } from "./xyzn-parser";
 import { Vec3, vec3, vec4 } from "wgpu-matrix";
 
 export interface RbfSample {
@@ -16,7 +20,7 @@ export enum RbfKernel {
     "gaussian" = 1,
     "cubic" = 2,
     "quintic" = 3,
-    "thin_plate" = 4,
+    "thinPlate" = 4,
 }
 
 export interface RbfFitConfig {
@@ -48,6 +52,12 @@ export function createBuiltInRbfFit(
             break;
         case "dragon":
             samples = createObjectConstraintSamples(config);
+            break;
+        case "bunny":
+            samples = createPlyObjectConstraintSamples(config, bunnyPly);
+            break;
+        case "teapot":
+            samples = createXyznConstraintSamples(config, teapotXyzn);
             break;
         case "sphere":
         default:
@@ -106,7 +116,7 @@ function createBoundingVolumeFromPoints(
 
 function createObjectConstraintSamples(config: RbfFitConfig): RbfSample[] {
     const samples: RbfSample[] = [];
-    const orientedPos = ObjParser.extractPositionsAndNormals(carObj);
+    const orientedPos = ObjParser.extractPositionsAndNormals(dragonObj);
     orientedPos.forEach((orientedPoint) => {
         samples.push({
             position: vec3.create(
@@ -150,6 +160,101 @@ function createObjectConstraintSamples(config: RbfFitConfig): RbfSample[] {
     //     }
     //     samples.push({ position: anchor, target: minDist });
     // }
+
+    return samples;
+}
+
+function createPlyObjectConstraintSamples(
+    config: RbfFitConfig,
+    plyFile: string,
+): RbfSample[] {
+    const samples: RbfSample[] = [];
+    const orientedPoints: PlyOrientedPoint[] =
+        PlyParser.extractPositionsAndNormals(plyFile, {
+            normalize: true,
+            targetSize: config.sphereRadius * 2,
+            maxPoints: config.surfaceSampleCount,
+            flipNormalsOutward: true,
+        });
+
+    for (const orientedPoint of orientedPoints) {
+        samples.push({
+            position: orientedPoint.position,
+            target: 0,
+        });
+
+        if (config.normalOffset > 0) {
+            const offset = config.normalOffset;
+            samples.push({
+                position: vec3.create(
+                    orientedPoint.position[0] +
+                        offset * orientedPoint.normal[0],
+                    orientedPoint.position[1] +
+                        offset * orientedPoint.normal[1],
+                    orientedPoint.position[2] +
+                        offset * orientedPoint.normal[2],
+                ),
+                target: offset,
+            });
+
+            // samples.push({
+            //     position: vec3.create(
+            //         orientedPoint.position[0] -
+            //             offset * orientedPoint.normal[0],
+            //         orientedPoint.position[1] -
+            //             offset * orientedPoint.normal[1],
+            //         orientedPoint.position[2] -
+            //             offset * orientedPoint.normal[2],
+            //     ),
+            //     target: -offset,
+            // });
+        }
+    }
+
+    return samples;
+}
+
+function createXyznConstraintSamples(
+    config: RbfFitConfig,
+    xyznFile: string,
+): RbfSample[] {
+    const samples: RbfSample[] = [];
+    const orientedPoints: XyznPoint[] =
+        XyznParser.extractPositionsAndNormals(xyznFile);
+
+    for (const orientedPoint of orientedPoints) {
+        samples.push({
+            position: orientedPoint.position,
+            target: 0,
+        });
+
+        if (config.normalOffset > 0) {
+            const offset = config.normalOffset;
+            samples.push({
+                position: vec3.create(
+                    orientedPoint.position[0] +
+                        offset * orientedPoint.normal[0],
+                    orientedPoint.position[1] +
+                        offset * orientedPoint.normal[1],
+                    orientedPoint.position[2] +
+                        offset * orientedPoint.normal[2],
+                ),
+                target: offset,
+            });
+
+            samples.push({
+                position: vec3.create(
+                    orientedPoint.position[0] -
+                        offset * orientedPoint.normal[0],
+                    orientedPoint.position[1] -
+                        offset * orientedPoint.normal[1],
+                    orientedPoint.position[2] -
+                        offset * orientedPoint.normal[2],
+                ),
+                target: -offset,
+            });
+        }
+    }
 
     return samples;
 }
@@ -235,7 +340,7 @@ function createTorusConstraintSamples(config: RbfFitConfig): RbfSample[] {
 
     for (let i = 0; i < numU; i++) {
         for (let j = 0; j < numV; j++) {
-            if (samples.length >= sampleCount * 3) break;
+            //if (samples.length >= sampleCount * 3) break;
             const u = (i / numU) * Math.PI * 2;
             const v = (j / numV) * Math.PI * 2;
 
@@ -276,37 +381,15 @@ function createTorusConstraintSamples(config: RbfFitConfig): RbfSample[] {
                     ),
                     target: -config.normalOffset,
                 });
-
-                // const bounds = majorRadius * 2.0;
-                // const anchorPoints: [number, number, number][] = [
-                //     [-bounds, -bounds, -bounds],
-                //     [-bounds, -bounds, bounds],
-                //     [-bounds, bounds, -bounds],
-                //     [-bounds, bounds, bounds],
-                //     [bounds, -bounds, -bounds],
-                //     [bounds, -bounds, bounds],
-                //     [bounds, bounds, -bounds],
-                //     [bounds, bounds, bounds],
-                // ];
-
-                // for (const anchor of anchorPoints) {
-                //     let minDist = Number.MAX_VALUE;
-                //     for (const sp of surfacePoints) {
-                //         // kernel ou distancia
-                //         const dist = distance(anchor, sp);
-                //         minDist = Math.min(minDist, dist);
-                //     }
-                //     samples.push({ position: anchor, target: minDist });
-                // }
             }
         }
     }
 
     // Anchor point in the center hole
-    samples.push({
-        position: vec3.create(0, 0, 0),
-        target: majorRadius - minorRadius,
-    });
+    // samples.push({
+    //     position: vec3.create(0, 0, 0),
+    //     target: majorRadius - minorRadius,
+    // });
     return samples;
 }
 
@@ -366,7 +449,7 @@ function kernel(radius: number, config: RbfFitConfig): number {
             return Math.pow(radius, 3);
         case RbfKernel.quintic:
             return Math.pow(radius, 5);
-        case RbfKernel.thin_plate:
+        case RbfKernel.thinPlate:
             if (radius == 0) {
                 return 0.0;
             }

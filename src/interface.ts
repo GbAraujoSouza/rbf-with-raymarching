@@ -1,5 +1,5 @@
 import { Renderer } from "./renderer";
-import { StepStrategy } from "./experiment";
+import { RenderBackend, StepStrategy } from "./experiment";
 import { RbfKernel } from "./rbf";
 
 export function setupUI(renderer: Renderer) {
@@ -27,6 +27,21 @@ export function setupUI(renderer: Renderer) {
             experimentState.renderMode = (e.target as HTMLInputElement).checked
                 ? 1
                 : 0;
+        });
+    }
+
+    const selRenderBackend = document.getElementById(
+        "sel-render-backend",
+    ) as HTMLSelectElement;
+    if (selRenderBackend) {
+        selRenderBackend.value =
+            RenderBackend[experimentState.renderBackend];
+        selRenderBackend.addEventListener("change", (e) => {
+            experimentState.renderBackend =
+                RenderBackend[
+                    (e.target as HTMLSelectElement)
+                        .value as keyof typeof RenderBackend
+                ];
         });
     }
 

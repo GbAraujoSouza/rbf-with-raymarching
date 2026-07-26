@@ -17,6 +17,7 @@ struct SceneUniforms {
     kernelType: f32,
     boxMin: vec4f,
     boxMax: vec4f,
+    worldToObject: mat4x4f,
 }
 
 
@@ -175,9 +176,12 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     let boxMin = sceneUniforms.boxMin.xyz;
     let boxMax = sceneUniforms.boxMax.xyz;
 
+    let localRayOrigin: vec3f = (sceneUniforms.worldToObject * vec4(rayOrigin, 1.0)).xyz;
+    let localRayDirection: vec3f = (sceneUniforms.worldToObject * vec4(rayDirection, 0.0)).xyz;
+
     var result: MarchingResult;
 
-    let hitBox: RayBoxIntercept = intersectAABB(rayOrigin, rayDirection, boxMin, boxMax);
+    let hitBox: RayBoxIntercept = intersectAABB(localRayOrigin, localRayDirection, boxMin, boxMax);
     if (!hitBox.hit) {
         result.distance = maxDistance;
         result.steps = 0;
@@ -187,7 +191,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     var depth = max(hitBox.tMin, 0.0);
     var endDepth = min(hitBox.tMax, maxDistance);
     for (var step = 0; step < MAX_MARCHING_STEPS; step += 1) {
-        let point = rayOrigin + depth * rayDirection;
+        let point = localRayOrigin + depth * localRayDirection;
         let fieldValue = sceneSdf(point, usePoints);
         let distanceToSurface = abs(fieldValue);
 
@@ -282,7 +286,8 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     }
 
     let horizontalCoeff: f32 = (f32(screenPos.x) - f32(screenSize.x) / 2.0) / f32(screenSize.x);
-    let verticalCoeff: f32 = (f32(screenPos.y) - f32(screenSize.y) / 2.0) / f32(screenSize.x);
+    //let verticalCoeff: f32 = (f32(screenPos.y) - f32(screenSize.y) / 2.0) / f32(screenSize.x);
+    let verticalCoeff: f32 = -(f32(screenPos.y) - f32(screenSize.y) / 2.0) / f32(screenSize.x);
 
 
     let rayOrigin = sceneUniforms.cameraPosition.xyz;
@@ -307,7 +312,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     }
 
     if (hitDistance >= sceneUniforms.marchParams.z) {
-        textureStore(screenTexture, screenPos, vec4f(0.1176, 0.1176, 0.1804, 1.0));
+        textureStore(screenTexture, screenPos, vec4f(0.8118, 0.9333, 1.0, 1.0));
         return;
     }
 

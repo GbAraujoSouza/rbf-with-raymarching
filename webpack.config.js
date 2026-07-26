@@ -37,6 +37,14 @@ module.exports = (env = {}, argv = {}) => {
         {
           test: /\.obj$/,
           type: "asset/source"
+        },
+        {
+          test: /\.ply$/,
+          type: "asset/source"
+        },
+        {
+          test: /\.xyzn$/,
+          type: "asset/source"
         }
       ]
     },
