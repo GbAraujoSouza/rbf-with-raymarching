@@ -1,18 +1,27 @@
-struct SceneData {
-    cameraPosition: vec3f,
-    cameraForward: vec3f,
-    cameraRight: vec3f,
-    cameraUp: vec3f,
-}
-
 struct SceneUniforms {
     screenAndCounts: vec4f, // width, height, # points, show_debug 
-    cameraPosition: vec3f,
-    cameraForward: vec3f,
-    cameraRight: vec3f,
-    cameraUp: vec3f,
-    marchParams: vec4f,
-    rbfParams: vec4f, // gaussian_epsilon, debug_points, step_strategy, render_mode
+    cameraPosition: vec4f,
+    cameraForward: vec4f,
+    cameraRight: vec4f,
+    cameraUp: vec4f,
+    
+    // RAY MARCHING PARAMS
+    gaussianKernelCorrectionPower: f32,
+    gaussianKernelCorrectionLinear: f32,
+    maxDistance: f32,
+    /*
+        This epsilon is used for 2 things:
+        1. Check if the ray is too close to the surface
+        2. Calculate normal near the point (small epsilon shift)
+    */
+    epsilon: f32,
+
+    // RBF PARAMS
+    gaussianEpsilon: f32,
+    debugPointRadius: f32,
+    stepStrategy: f32, //later transform to u32
+    renderMode: f32, //later transform to u32
+
     lightPosition: vec3f,
     kernelType: f32,
     boxMin: vec4f,
@@ -43,7 +52,7 @@ struct MarchingResult {
 const MAX_MARCHING_STEPS = 255;
 
 fn gaussian(point: vec3f, center: vec3f) -> f32 {
-    let epsilon = sceneUniforms.rbfParams.x;
+    let epsilon = sceneUniforms.gaussianEpsilon;
     let epsilonSquared = epsilon * epsilon;
     let d = point - center;
     return exp(-epsilonSquared * dot(d, d));
@@ -100,11 +109,11 @@ fn rbfField(point: vec3f) -> f32 {
 
 fn pointsSdf(point: vec3f) -> f32 {
     let sampleCount = i32(sceneUniforms.screenAndCounts.z);
-    var minimumDistance = sceneUniforms.marchParams.z;
+    var minimumDistance = sceneUniforms.maxDistance;
 
     for (var index = 0; index < sampleCount; index += 1) {
         let center = samplePositions.values[index].xyz;
-        let distanceToPoint = distance(point, center) - sceneUniforms.rbfParams.y;
+        let distanceToPoint = distance(point, center) - sceneUniforms.debugPointRadius;
         minimumDistance = min(minimumDistance, distanceToPoint);
     }
 
@@ -120,7 +129,7 @@ fn sceneSdf(point: vec3f, usePoints: bool) -> f32 {
 }
 
 fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
-    var strategyId: u32 = u32(sceneUniforms.rbfParams.z);
+    var strategyId: u32 = u32(sceneUniforms.stepStrategy);
     switch(strategyId) {
         case 0u {
             // naive
@@ -128,9 +137,9 @@ fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
         }
         case 1u {
             // exponential correction
-            let epsilon = sceneUniforms.marchParams.w;
-            let correctionPower = sceneUniforms.marchParams.x;
-            let correctionLinear = sceneUniforms.marchParams.y;
+            let epsilon = sceneUniforms.epsilon;
+            let correctionPower = sceneUniforms.gaussianKernelCorrectionPower;
+            let correctionLinear = sceneUniforms.gaussianKernelCorrectionLinear;
             return correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
         }
         case 2u {
@@ -171,8 +180,8 @@ fn intersectAABB(rayOrigin: vec3f, rayDirection: vec3f, boxMin: vec3f, boxMax: v
     Ray march function
 */
 fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: bool) -> MarchingResult {
-    let maxDistance = sceneUniforms.marchParams.z;
-    let epsilon = sceneUniforms.marchParams.w;
+    let maxDistance = sceneUniforms.maxDistance;
+    let epsilon = sceneUniforms.epsilon;
     let boxMin = sceneUniforms.boxMin.xyz;
     let boxMax = sceneUniforms.boxMax.xyz;
 
@@ -235,7 +244,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 }
 
 fn estimateNormal(point: vec3f, usePoints: bool, normal: bool) -> vec3f {
-    let epsilon = sceneUniforms.marchParams.w;
+    let epsilon = sceneUniforms.epsilon;
     let e = vec2f(epsilon, 0.0);
     let gradient = sceneSdf(point, usePoints) - vec3f(sceneSdf(point - e.xyy, usePoints), sceneSdf(point - e.yxy, usePoints), sceneSdf(point - e.yyx, usePoints));
     // let xOffset = vec3f(epsilon, 0.0, 0.0);
@@ -291,7 +300,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
 
 
     let rayOrigin = sceneUniforms.cameraPosition.xyz;
-    let rayDirection = normalize(sceneUniforms.cameraForward + horizontalCoeff * sceneUniforms.cameraRight + verticalCoeff * sceneUniforms.cameraUp);
+    let rayDirection = normalize(sceneUniforms.cameraForward.xyz + horizontalCoeff * sceneUniforms.cameraRight.xyz + verticalCoeff * sceneUniforms.cameraUp.xyz);
     //let rayDir = rayDirection(input.uv);
     let showPoints = sceneUniforms.screenAndCounts.w > 0.5;
 
@@ -311,7 +320,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
         }
     }
 
-    if (hitDistance >= sceneUniforms.marchParams.z) {
+    if (hitDistance >= sceneUniforms.maxDistance) {
         textureStore(screenTexture, screenPos, vec4f(0.8118, 0.9333, 1.0, 1.0));
         return;
     }
@@ -323,7 +332,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     // final color with light
     let shaded = phong(baseColor, point, normal);
 
-    if (sceneUniforms.rbfParams.w == 1) {
+    if (sceneUniforms.renderMode == 1) {
         let steps = rbfResult.steps;
         let stepIntensity = f32(steps)/f32(MAX_MARCHING_STEPS);
         // Heatmap: Blue (cold/few steps) to Red (hot/many steps)
