@@ -3,8 +3,8 @@ import numeric from "numeric";
 
 import dragonObj from "./dragon_points.obj";
 import carObj from "./points_block_car.obj";
-import bunnyPly from "../bunny/bunny/reconstruction/bun_zipper.ply";
-import teapotXyzn from "../obj-models/teapot.xyzn";
+import bunnyPly from "./models/bunny/bunny/reconstruction/bun_zipper.ply";
+import teapotXyzn from "./models/obj-models/teapot.xyzn";
 import { ObjParser } from "./obj-parser";
 import { PlyOrientedPoint, PlyParser } from "./ply-parser";
 import { XyznParser, XyznPoint } from "./xyzn-parser";

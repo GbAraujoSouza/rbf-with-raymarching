@@ -516,6 +516,8 @@ export class Renderer {
             boxMax: this.rbfFit.boxMax,
 
             worldToObject: this.worldToObject,
+            
+            maxSteps: this.experimentState.rayMarchingConfig.maxSteps,
         };
 
         const uniformData: Float32Array<ArrayBuffer> =

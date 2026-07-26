@@ -27,6 +27,8 @@ struct SceneUniforms {
     boxMin: vec4f,
     boxMax: vec4f,
     worldToObject: mat4x4f,
+
+    maxSteps: f32, //this has padding
 }
 
 
@@ -45,11 +47,9 @@ struct SampleWeights {
 
 struct MarchingResult {
     distance: f32,
-    steps: i32,
+    steps: u32,
 }
 
-
-const MAX_MARCHING_STEPS = 255;
 
 fn gaussian(point: vec3f, center: vec3f) -> f32 {
     let epsilon = sceneUniforms.gaussianEpsilon;
@@ -199,7 +199,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 
     var depth = max(hitBox.tMin, 0.0);
     var endDepth = min(hitBox.tMax, maxDistance);
-    for (var step = 0; step < MAX_MARCHING_STEPS; step += 1) {
+    for (var step: u32 = 0; step < u32(sceneUniforms.maxSteps); step += 1) {
         let point = localRayOrigin + depth * localRayDirection;
         let fieldValue = sceneSdf(point, usePoints);
         let distanceToSurface = abs(fieldValue);
@@ -239,7 +239,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     }
 
     result.distance = maxDistance;
-    result.steps = MAX_MARCHING_STEPS;
+    result.steps = u32(sceneUniforms.maxSteps);
     return result;
 }
 
@@ -334,7 +334,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
 
     if (sceneUniforms.renderMode == 1) {
         let steps = rbfResult.steps;
-        let stepIntensity = f32(steps)/f32(MAX_MARCHING_STEPS);
+        let stepIntensity = f32(steps)/f32(u32(sceneUniforms.maxSteps));
         // Heatmap: Blue (cold/few steps) to Red (hot/many steps)
         let stepGradientColor = mix(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), stepIntensity);
 

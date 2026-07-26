@@ -14,9 +14,10 @@ export const SCENE_UNIFORM_SLOTS = {
     boxMin: 32,
     boxMax: 36,
     worldToObject: 40,
+    maxSteps: 56,
 };
 
-export const SCENE_UNIFORM_FLOATS = 56;
+export const SCENE_UNIFORM_FLOATS = 60;
 export const SCENE_UNIFORM_BYTES = SCENE_UNIFORM_FLOATS * 4;
 
 export interface SceneUniformInput {
@@ -47,6 +48,8 @@ export interface SceneUniformInput {
     boxMax: Vec3;
 
     worldToObject: Mat4;
+
+    maxSteps: number;
 }
 
 export class SceneUniforms {
@@ -169,6 +172,15 @@ export class SceneUniforms {
         );
 
         uniformData.set(input.worldToObject, SCENE_UNIFORM_SLOTS.worldToObject);
+
+        SceneUniforms.setVec4(
+            uniformData,
+            SCENE_UNIFORM_SLOTS.maxSteps,
+            input.maxSteps,
+            0.0,
+            0.0,
+            0.0
+        )
         return uniformData;
     }
 }
