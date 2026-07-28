@@ -4,6 +4,7 @@ export enum StepStrategy {
     "naive" = 0,
     "exponentialCorrection" = 1,
     "gradient" = 2,
+    "cellLocalLipschitz" = 3,
 }
 
 export enum RenderMode {
@@ -18,6 +19,9 @@ export interface RayMarchingConfig {
     maxSteps: number;
     correctionLinear: number;
     correctionPower: number;
+    lipschitzGridResolution: number;
+    lipschitzSamplesPerAxis: number;
+    lipschitzSafetyFactor: number;
 }
 
 export interface MarchingCubesConfig {
@@ -68,6 +72,9 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         maxSteps: 255,
         correctionLinear: 0.9,
         correctionPower: 0.85,
+        lipschitzGridResolution: 8,
+        lipschitzSamplesPerAxis: 3,
+        lipschitzSafetyFactor: 1.2,
     },
     rbfConfig: {
         surfaceSampleCount: 8,

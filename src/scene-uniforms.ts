@@ -15,9 +15,10 @@ export const SCENE_UNIFORM_SLOTS = {
     boxMax: 36,
     worldToObject: 40,
     maxSteps: 56,
+    lipschitzGridDimensions: 60,
 };
 
-export const SCENE_UNIFORM_FLOATS = 60;
+export const SCENE_UNIFORM_FLOATS = 64;
 export const SCENE_UNIFORM_BYTES = SCENE_UNIFORM_FLOATS * 4;
 
 export interface SceneUniformInput {
@@ -50,6 +51,7 @@ export interface SceneUniformInput {
     worldToObject: Mat4;
 
     maxSteps: number;
+    lipschitzGridDimensions: Vec3;
 }
 
 export class SceneUniforms {
@@ -180,7 +182,15 @@ export class SceneUniforms {
             0.0,
             0.0,
             0.0
-        )
+        );
+        SceneUniforms.setVec4(
+            uniformData,
+            SCENE_UNIFORM_SLOTS.lipschitzGridDimensions,
+            input.lipschitzGridDimensions[0],
+            input.lipschitzGridDimensions[1],
+            input.lipschitzGridDimensions[2],
+            0.0,
+        );
         return uniformData;
     }
 }

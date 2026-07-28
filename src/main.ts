@@ -16,5 +16,9 @@ canvas.height = window.innerHeight;
 
 const renderer = new Renderer(canvas);
 
-renderer.initialize();
-setupUI(renderer);
+async function initializeApplication(): Promise<void> {
+    await renderer.initialize();
+    setupUI(renderer);
+}
+
+void initializeApplication();

@@ -6,6 +6,7 @@ import {
     DEFAULT_EXPERIMENT_STATE,
     ExperimentState,
     RenderBackend,
+    StepStrategy,
 } from "./experiment";
 import {
     SCENE_UNIFORM_BYTES,
@@ -14,6 +15,11 @@ import {
 } from "./scene-uniforms";
 import { MeshCameraUniformInput, MeshRenderer } from "./mesh-renderer";
 import { buildMarchingCubesMesh, ExtractedMesh } from "./mesh";
+import {
+    buildLipschitzGrid,
+    LipschitzGrid,
+    LipschitzGridConfig,
+} from "./lipschitz-grid";
 
 export class Renderer {
     canvas: HTMLCanvasElement;
@@ -27,13 +33,16 @@ export class Renderer {
     pipeline!: GPURenderPipeline;
 
     computeBindGroup!: GPUBindGroup;
+    computeBindGroupLayout!: GPUBindGroupLayout;
     computePipeline!: GPUComputePipeline;
 
     uniformBuffer!: GPUBuffer;
     positionsBuffer!: GPUBuffer;
     weightsBuffer!: GPUBuffer;
+    lipschitzBuffer!: GPUBuffer;
 
     rbfFit!: RbfFitResult;
+    lipschitzGrid?: LipschitzGrid;
 
     experimentState: ExperimentState;
 
@@ -164,7 +173,7 @@ export class Renderer {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
-        const computeBindGroupLayout = this.device.createBindGroupLayout({
+        this.computeBindGroupLayout = this.device.createBindGroupLayout({
             entries: [
                 {
                     binding: 0,
@@ -190,34 +199,15 @@ export class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: { type: "read-only-storage" },
                 },
+                {
+                    binding: 4,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "read-only-storage" },
+                },
             ],
         });
 
-        this.computeBindGroup = this.device.createBindGroup({
-            layout: computeBindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: this.gpuTextureView,
-                },
-                {
-                    binding: 1,
-                    resource: this.uniformBuffer,
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: this.positionsBuffer,
-                    },
-                },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: this.weightsBuffer,
-                    },
-                },
-            ],
-        });
+        this.rebuildComputeBindGroup();
 
         const bindGroupLayout = this.device.createBindGroupLayout({
             entries: [
@@ -251,7 +241,7 @@ export class Renderer {
         // CREATE PIPELINES
 
         const computePipelineLayout = this.device.createPipelineLayout({
-            bindGroupLayouts: [computeBindGroupLayout],
+            bindGroupLayouts: [this.computeBindGroupLayout],
         });
 
         const computeModule = this.device.createShaderModule({
@@ -307,6 +297,9 @@ export class Renderer {
             size: this.rbfFit.weights.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
+        this.lipschitzBuffer = this.createLipschitzBuffer(
+            new Float32Array([1]),
+        );
 
         this.device.queue.writeBuffer(
             this.positionsBuffer,
@@ -318,6 +311,13 @@ export class Renderer {
             0,
             this.rbfFit.weights,
         );
+
+        if (
+            this.experimentState.rayMarchingConfig.strategy ===
+            StepStrategy.cellLocalLipschitz
+        ) {
+            this.rebuildLipschitzGrid(false);
+        }
 
         this.gpuTexture = this.device.createTexture({
             size: {
@@ -516,8 +516,15 @@ export class Renderer {
             boxMax: this.rbfFit.boxMax,
 
             worldToObject: this.worldToObject,
-            
+
             maxSteps: this.experimentState.rayMarchingConfig.maxSteps,
+            lipschitzGridDimensions: this.lipschitzGrid
+                ? vec3.create(
+                      this.lipschitzGrid.nx,
+                      this.lipschitzGrid.ny,
+                      this.lipschitzGrid.nz,
+                  )
+                : vec3.create(1, 1, 1),
         };
 
         const uniformData: Float32Array<ArrayBuffer> =
@@ -595,8 +602,84 @@ export class Renderer {
             this.rbfFit.weights,
         );
 
+        this.invalidateLipschitzGrid();
+        if (
+            this.experimentState.rayMarchingConfig.strategy ===
+            StepStrategy.cellLocalLipschitz
+        ) {
+            this.rebuildLipschitzGrid(false);
+        }
+        this.rebuildComputeBindGroup();
+        if (
+            this.experimentState.renderBackend === RenderBackend.marchingCubes
+        ) {
+            this.rebuildMarchingCubesMesh();
+        }
+    }
+
+    ensureLipschitzGrid(): void {
+        if (!this.lipschitzGrid) {
+            this.rebuildLipschitzGrid();
+        }
+    }
+
+    rebuildLipschitzGrid(rebuildBindGroup: boolean = true): void {
+        const config: LipschitzGridConfig = {
+            resolution:
+                this.experimentState.rayMarchingConfig
+                    .lipschitzGridResolution,
+            samplesPerAxis:
+                this.experimentState.rayMarchingConfig
+                    .lipschitzSamplesPerAxis,
+            safetyFactor:
+                this.experimentState.rayMarchingConfig
+                    .lipschitzSafetyFactor,
+        };
+        const start = performance.now();
+        const grid = buildLipschitzGrid(
+            this.rbfFit,
+            this.experimentState.rbfConfig,
+            config,
+        );
+        const elapsed = performance.now() - start;
+
+        this.lipschitzGrid = grid;
+        this.lipschitzBuffer.destroy();
+        this.lipschitzBuffer = this.createLipschitzBuffer(grid.values);
+        if (rebuildBindGroup && this.computeBindGroupLayout) {
+            this.rebuildComputeBindGroup();
+        }
+
+        console.log(
+            `Lipschitz grid ${grid.nx}x${grid.ny}x${grid.nz}: ` +
+                `${grid.gradientSampleCount} gradient samples, ` +
+                `bounds ${grid.minimumBound}..${grid.maximumBound}, ` +
+                `${elapsed} ms`,
+        );
+    }
+
+    private invalidateLipschitzGrid(): void {
+        this.lipschitzGrid = undefined;
+        this.lipschitzBuffer.destroy();
+        this.lipschitzBuffer = this.createLipschitzBuffer(
+            new Float32Array([1]),
+        );
+    }
+
+    private createLipschitzBuffer(
+        values: Float32Array<ArrayBuffer>,
+    ): GPUBuffer {
+        const buffer = this.device.createBuffer({
+            size: Math.max(values.byteLength, 4),
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        this.device.queue.writeBuffer(buffer, 0, values);
+        return buffer;
+    }
+
+    private rebuildComputeBindGroup(): void {
         this.computeBindGroup = this.device.createBindGroup({
-            layout: this.computePipeline.getBindGroupLayout(0),
+            layout: this.computeBindGroupLayout,
             entries: [
                 {
                     binding: 0,
@@ -614,13 +697,12 @@ export class Renderer {
                     binding: 3,
                     resource: { buffer: this.weightsBuffer },
                 },
+                {
+                    binding: 4,
+                    resource: { buffer: this.lipschitzBuffer },
+                },
             ],
         });
-        if (
-            this.experimentState.renderBackend === RenderBackend.marchingCubes
-        ) {
-            this.rebuildMarchingCubesMesh();
-        }
     }
 }
 

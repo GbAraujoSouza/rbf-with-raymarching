@@ -30,6 +30,33 @@ export function evaluateKernel(
     }
 }
 
+export function evaluateKernelDerivativeScale(
+    radius: number,
+    kernel: RbfKernel,
+    epsilon: number,
+): number {
+    switch (kernel) {
+        case RbfKernel.linear:
+            return radius > 0 ? 1 / radius : 0;
+        case RbfKernel.gaussian: {
+            const epsilonSquared = epsilon * epsilon;
+            return (
+                -2 *
+                epsilonSquared *
+                Math.exp(-epsilonSquared * radius * radius)
+            );
+        }
+        case RbfKernel.cubic:
+            return 3 * radius;
+        case RbfKernel.quintic:
+            return 5 * radius * radius * radius;
+        case RbfKernel.thinPlate:
+            return radius > 0 ? 2 * Math.log(radius) + 1 : 0;
+        default:
+            return radius > 0 ? 1 / radius : 0;
+    }
+}
+
 export function evaluateRbfField(
     point: Vec3,
     rbfFitResult: RbfFitResult,

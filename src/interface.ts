@@ -58,6 +58,12 @@ export function setupUI(renderer: Renderer) {
                     (e.target as HTMLSelectElement)
                         .value as keyof typeof StepStrategy
                 ];
+            if (
+                experimentState.rayMarchingConfig.strategy ===
+                StepStrategy.cellLocalLipschitz
+            ) {
+                renderer.ensureLipschitzGrid();
+            }
         });
     }
 
@@ -139,6 +145,35 @@ export function setupUI(renderer: Renderer) {
         experimentState.rayMarchingConfig,
         "correctionPower",
     );
+    bindSlider(
+        "rng-rm-lipschitz-resolution",
+        "val-rm-lipschitz-resolution",
+        experimentState.rayMarchingConfig,
+        "lipschitzGridResolution",
+        true,
+    );
+    bindSlider(
+        "rng-rm-lipschitz-samples",
+        "val-rm-lipschitz-samples",
+        experimentState.rayMarchingConfig,
+        "lipschitzSamplesPerAxis",
+        true,
+    );
+    bindSlider(
+        "rng-rm-lipschitz-safety",
+        "val-rm-lipschitz-safety",
+        experimentState.rayMarchingConfig,
+        "lipschitzSafetyFactor",
+    );
+
+    const btnApplyLipschitz = document.getElementById(
+        "btn-apply-lipschitz",
+    ) as HTMLButtonElement;
+    if (btnApplyLipschitz) {
+        btnApplyLipschitz.addEventListener("click", () => {
+            renderer.rebuildLipschitzGrid();
+        });
+    }
 
     // RBF Config params
     bindSlider(
