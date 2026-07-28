@@ -246,7 +246,10 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 fn estimateNormal(point: vec3f, usePoints: bool, normal: bool) -> vec3f {
     let epsilon = sceneUniforms.epsilon;
     let e = vec2f(epsilon, 0.0);
-    let gradient = sceneSdf(point, usePoints) - vec3f(sceneSdf(point - e.xyy, usePoints), sceneSdf(point - e.yxy, usePoints), sceneSdf(point - e.yyx, usePoints));
+    let gradient = sceneSdf(point, usePoints) - 
+            vec3f(sceneSdf(point - e.xyy, usePoints), 
+                  sceneSdf(point - e.yxy, usePoints),
+                  sceneSdf(point - e.yyx, usePoints));
     // let xOffset = vec3f(epsilon, 0.0, 0.0);
     // let yOffset = vec3f(0.0, epsilon, 0.0);
     // let zOffset = vec3f(0.0, 0.0, epsilon);
@@ -260,7 +263,7 @@ fn estimateNormal(point: vec3f, usePoints: bool, normal: bool) -> vec3f {
     if (normal) {
         return normalize(gradient);
     }
-    return gradient / (2.0 * epsilon);
+    return gradient / epsilon;
 }
 
 fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
