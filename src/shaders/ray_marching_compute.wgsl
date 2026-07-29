@@ -185,10 +185,12 @@ fn lipschitzCellCoordinate(
     let nearestBoundary = round(scaledPosition);
     var coordinate = i32(floor(scaledPosition));
     if (
-        abs(scaledPosition - nearestBoundary) <= GRID_BOUNDARY_TOLERANCE &&
-        rayDirection < 0.0
+        abs(scaledPosition - nearestBoundary) <= GRID_BOUNDARY_TOLERANCE
     ) {
-        coordinate = i32(nearestBoundary) - 1;
+        coordinate = i32(nearestBoundary);
+        if (rayDirection < 0.0) {
+            coordinate -= 1;
+        }
     }
     return u32(clamp(coordinate, 0, i32(dimension) - 1));
 }

@@ -69,6 +69,9 @@ export class Renderer {
     frameCount: number = 0;
     fps: number = 0;
     fpsElement: HTMLElement | null = null;
+    private readonly rbfFitListeners = new Set<
+        (fit: RbfFitResult, config: RbfFitConfig) => void
+    >();
 
     constructor(
         canvas: HTMLCanvasElement,
@@ -614,6 +617,23 @@ export class Renderer {
             this.experimentState.renderBackend === RenderBackend.marchingCubes
         ) {
             this.rebuildMarchingCubesMesh();
+        }
+        this.notifyRbfFitChanged();
+    }
+
+    onRbfFitChanged(
+        listener: (fit: RbfFitResult, config: RbfFitConfig) => void,
+    ): () => void {
+        this.rbfFitListeners.add(listener);
+        if (this.rbfFit) {
+            listener(this.rbfFit, this.experimentState.rbfConfig);
+        }
+        return () => this.rbfFitListeners.delete(listener);
+    }
+
+    private notifyRbfFitChanged(): void {
+        for (const listener of this.rbfFitListeners) {
+            listener(this.rbfFit, this.experimentState.rbfConfig);
         }
     }
 

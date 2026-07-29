@@ -13,6 +13,21 @@
     </head>
     <body>
         <canvas id="gpu-canvas"></canvas>
+        <aside id="rbf-distance-panel" class="analysis-panel">
+            <div class="analysis-header">
+                <h2>RBF Distance Approximation</h2>
+                <div id="rbf-distance-status">Waiting for RBF data...</div>
+            </div>
+            <div class="analysis-chart-container">
+                <canvas
+                    id="rbf-distance-plot"
+                    aria-label="Scatter plot comparing absolute RBF values with sampled zero-set distances"
+                ></canvas>
+            </div>
+            <p class="analysis-caption">
+                |RBF| × sampled zero-set distance
+            </p>
+        </aside>
         <div id="config-modal" class="config-modal">
             <div class="modal-header">
                 <h2>Experiment Config</h2>
