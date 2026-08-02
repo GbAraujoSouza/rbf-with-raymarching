@@ -15,9 +15,6 @@ export interface PlyParserOptions {
 interface PlyHeader {
     vertexCount: number;
     faceCount: number;
-    rangeGridCount: number;
-    rangeGridCols: number;
-    rangeGridRows: number;
     headerEndLine: number;
     vertexProperties: string[];
 }
@@ -36,9 +33,10 @@ export class PlyParser {
             vertices,
             options.flipNormalsOutward ?? true,
         );
-        const normalizedVertices = options.normalize ?? true
-            ? this.normalizeVertices(vertices, options.targetSize ?? 2.0)
-            : vertices;
+        const normalizedVertices =
+            (options.normalize ?? true)
+                ? this.normalizeVertices(vertices, options.targetSize ?? 2.0)
+                : vertices;
         const orientedPoints = this.createOrientedPoints(
             normalizedVertices,
             normals,
@@ -54,9 +52,6 @@ export class PlyParser {
 
         let vertexCount = 0;
         let faceCount = 0;
-        let rangeGridCount = 0;
-        let rangeGridCols = 0;
-        let rangeGridRows = 0;
         let headerEndLine = -1;
         let isAscii = false;
         let currentElement = "";
@@ -75,16 +70,6 @@ export class PlyParser {
                 throw new Error(`Unsupported PLY format: ${line}`);
             }
 
-            if (parts[0] === "obj_info" && parts[1] === "num_cols") {
-                rangeGridCols = Number.parseInt(parts[2], 10);
-                continue;
-            }
-
-            if (parts[0] === "obj_info" && parts[1] === "num_rows") {
-                rangeGridRows = Number.parseInt(parts[2], 10);
-                continue;
-            }
-
             if (parts[0] === "element") {
                 currentElement = parts[1];
                 if (currentElement === "vertex") {
@@ -92,9 +77,6 @@ export class PlyParser {
                 }
                 if (currentElement === "face") {
                     faceCount = Number.parseInt(parts[2], 10);
-                }
-                if (currentElement === "range_grid") {
-                    rangeGridCount = Number.parseInt(parts[2], 10);
                 }
                 continue;
             }
@@ -121,9 +103,6 @@ export class PlyParser {
         return {
             vertexCount,
             faceCount,
-            rangeGridCount,
-            rangeGridCols,
-            rangeGridRows,
             headerEndLine,
             vertexProperties,
         };
@@ -134,33 +113,20 @@ export class PlyParser {
         const yIndex = header.vertexProperties.indexOf("y");
         const zIndex = header.vertexProperties.indexOf("z");
 
-        if (xIndex < 0 || yIndex < 0 || zIndex < 0) {
-            throw new Error("Invalid PLY file: vertex x/y/z properties missing");
-        }
-
         const vertices: Vec3[] = [];
         const firstVertexLine = header.headerEndLine + 1;
 
         for (let index = 0; index < header.vertexCount; index += 1) {
             const line = lines[firstVertexLine + index]?.trim();
-            if (!line) {
-                throw new Error(`Invalid PLY file: missing vertex ${index}`);
-            }
 
-            const values = line.split(/\s+/).map((value) =>
-                Number.parseFloat(value),
-            );
-            const x = values[xIndex];
-            const y = values[yIndex];
-            const z = values[zIndex];
+            const values: number[] = line
+                .split(/\s+/)
+                .map((value) => Number.parseFloat(value));
+            const x: number = values[xIndex];
+            const y: number = values[yIndex];
+            const z: number = values[zIndex];
 
-            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
-                throw new Error(`Invalid PLY file: malformed vertex ${index}`);
-            }
-
-            vertices.push(
-                vec3.create(x, y, z),
-            );
+            vertices.push(vec3.create(x, y, z));
         }
 
         return vertices;
@@ -173,7 +139,7 @@ export class PlyParser {
         flipNormalsOutward: boolean,
     ): Vec3[] {
         const normals = vertices.map(() => vec3.create(0, 0, 0));
-        const firstFaceLine = header.headerEndLine + 1 + header.vertexCount;
+        const firstFaceLine = header.headerEndLine + header.vertexCount + 1;
         let signedVolume = 0;
 
         if (header.faceCount > 0) {
@@ -184,8 +150,6 @@ export class PlyParser {
                 normals,
                 firstFaceLine,
             );
-        } else if (header.rangeGridCount > 0) {
-            this.accumulateRangeGridNormals(lines, header, vertices, normals);
         }
 
         if (flipNormalsOutward && signedVolume < 0) {
@@ -216,104 +180,19 @@ export class PlyParser {
 
         for (let faceIndex = 0; faceIndex < header.faceCount; faceIndex += 1) {
             const line = lines[firstFaceLine + faceIndex]?.trim();
-            if (!line) {
-                continue;
-            }
 
-            const indices = this.parseFaceIndices(line, faceIndex);
+            const indices: number[] = this.parseFaceIndices(line, faceIndex);
 
-            for (let i = 1; i < indices.length - 1; i += 1) {
-                signedVolume += this.accumulateTriangleNormal(
-                    vertices,
-                    normals,
-                    indices[0],
-                    indices[i],
-                    indices[i + 1],
-                );
-            }
+            signedVolume += this.accumulateTriangleNormal(
+                vertices,
+                normals,
+                indices[0],
+                indices[1],
+                indices[2],
+            );
         }
 
         return signedVolume;
-    }
-
-    private static accumulateRangeGridNormals(
-        lines: string[],
-        header: PlyHeader,
-        vertices: Vec3[],
-        normals: Vec3[],
-    ): void {
-        const rangeGrid = this.parseRangeGrid(lines, header);
-
-        for (let row = 0; row < header.rangeGridRows - 1; row += 1) {
-            for (let col = 0; col < header.rangeGridCols - 1; col += 1) {
-                const topLeft = rangeGrid[row * header.rangeGridCols + col];
-                const topRight = rangeGrid[row * header.rangeGridCols + col + 1];
-                const bottomLeft =
-                    rangeGrid[(row + 1) * header.rangeGridCols + col];
-                const bottomRight =
-                    rangeGrid[(row + 1) * header.rangeGridCols + col + 1];
-
-                if (topLeft >= 0 && bottomLeft >= 0 && topRight >= 0) {
-                    this.accumulateTriangleNormal(
-                        vertices,
-                        normals,
-                        topLeft,
-                        bottomLeft,
-                        topRight,
-                    );
-                }
-
-                if (topRight >= 0 && bottomLeft >= 0 && bottomRight >= 0) {
-                    this.accumulateTriangleNormal(
-                        vertices,
-                        normals,
-                        topRight,
-                        bottomLeft,
-                        bottomRight,
-                    );
-                }
-            }
-        }
-    }
-
-    private static parseRangeGrid(lines: string[], header: PlyHeader): Int32Array {
-        if (
-            header.rangeGridCols <= 0 ||
-            header.rangeGridRows <= 0 ||
-            header.rangeGridCols * header.rangeGridRows !== header.rangeGridCount
-        ) {
-            throw new Error("Invalid PLY file: malformed range_grid dimensions");
-        }
-
-        const rangeGrid = new Int32Array(header.rangeGridCount);
-        rangeGrid.fill(-1);
-
-        const firstRangeGridLine =
-            header.headerEndLine + 1 + header.vertexCount + header.faceCount;
-
-        for (let index = 0; index < header.rangeGridCount; index += 1) {
-            const line = lines[firstRangeGridLine + index]?.trim();
-            if (!line) {
-                continue;
-            }
-
-            const values = line.split(/\s+/).map((value) =>
-                Number.parseInt(value, 10),
-            );
-            const valueCount = values[0];
-
-            if (valueCount === 0) {
-                continue;
-            }
-
-            if (valueCount !== 1 || !Number.isInteger(values[1])) {
-                throw new Error(`Invalid PLY file: malformed range_grid ${index}`);
-            }
-
-            rangeGrid[index] = values[1];
-        }
-
-        return rangeGrid;
     }
 
     private static accumulateTriangleNormal(
@@ -326,9 +205,6 @@ export class PlyParser {
         const a = vertices[aIndex];
         const b = vertices[bIndex];
         const c = vertices[cIndex];
-        if (!a || !b || !c) {
-            return 0;
-        }
 
         const ab = vec3.subtract(b, a);
         const ac = vec3.subtract(c, a);
@@ -342,25 +218,19 @@ export class PlyParser {
     }
 
     private static parseFaceIndices(line: string, faceIndex: number): number[] {
-        const values = line.split(/\s+/).map((value) =>
-            Number.parseInt(value, 10),
-        );
+        const values = line
+            .split(/\s+/)
+            .map((value) => Number.parseInt(value, 10));
         const vertexCount = values[0];
         const indices = values.slice(1, vertexCount + 1);
-
-        if (
-            !Number.isInteger(vertexCount) ||
-            vertexCount < 3 ||
-            indices.length !== vertexCount ||
-            indices.some((index) => !Number.isInteger(index) || index < 0)
-        ) {
-            throw new Error(`Invalid PLY file: malformed face ${faceIndex}`);
-        }
 
         return indices;
     }
 
-    private static normalizeVertices(vertices: Vec3[], targetSize: number): Vec3[] {
+    private static normalizeVertices(
+        vertices: Vec3[],
+        targetSize: number,
+    ): Vec3[] {
         const boxMin = vec3.create(Infinity, Infinity, Infinity);
         const boxMax = vec3.create(-Infinity, -Infinity, -Infinity);
 
