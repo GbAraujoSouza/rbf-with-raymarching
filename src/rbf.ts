@@ -4,6 +4,7 @@ import numeric from "numeric";
 import dragonObj from "./dragon_points.obj";
 import carObj from "./points_block_car.obj";
 import bunnyPly from "./models/bunny/bunny/reconstruction/bun_zipper.ply";
+import dragonPly from "./models/dragon_recon/dragon_vrip_res3.ply";
 import teapotXyzn from "./models/obj-models/teapot.xyzn";
 import { ObjParser } from "./obj-parser";
 import { PlyOrientedPoint, PlyParser } from "./ply-parser";
@@ -51,7 +52,8 @@ export function createBuiltInRbfFit(
             samples = createTorusConstraintSamples(config);
             break;
         case "dragon":
-            samples = createObjectConstraintSamples(config);
+            //samples = createObjectConstraintSamples(config);
+            samples = createPlyObjectConstraintSamples(config, dragonPly);
             break;
         case "bunny":
             samples = createPlyObjectConstraintSamples(config, bunnyPly);
