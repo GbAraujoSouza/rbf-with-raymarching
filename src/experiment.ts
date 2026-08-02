@@ -67,7 +67,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
     },
     rayMarchingConfig: {
         strategy: StepStrategy.naive,
-        epsilon: 1e-5,
+        epsilon: 1e-4,
         maxDistance: 20,
         maxSteps: 255,
         correctionLinear: 0.9,
