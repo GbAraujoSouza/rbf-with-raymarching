@@ -161,7 +161,7 @@ fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
         }
         case 2u {
             // gradient
-            var gradient: vec3f = estimateNormal(point, false, false);
+            var gradient: vec3f = estimateNormal(point, false, false, true);
             let rawStep = distanceToSurface / max(length(gradient), 0.01);
             return rawStep;
         }
@@ -406,13 +406,75 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     return result;
 }
 
-fn estimateNormal(point: vec3f, usePoints: bool, normal: bool) -> vec3f {
+fn rbfGradient(point: vec3f) -> vec3f {
+    let sampleCount = i32(sceneUniforms.screenAndCounts.z);
+    var gradient = vec3f(0.0, 0.0, 0.0);
+
+    for (var index = 0; index < sampleCount; index += 1) {
+        let center = samplePositions.values[index].xyz;
+        let offset = point - center;
+        let radius = length(offset);
+        var derivativeScale = 0.0;
+
+        switch(u32(sceneUniforms.kernelType)) {
+            case 0u {
+                if (radius > 0.0) {
+                    derivativeScale = 1.0 / radius;
+                }
+            }
+            case 1u {
+                let epsilon = sceneUniforms.gaussianEpsilon;
+                let epsilonSquared = epsilon * epsilon;
+                derivativeScale =
+                    -2.0 *
+                    epsilonSquared *
+                    exp(-epsilonSquared * radius * radius);
+            }
+            case 2u {
+                derivativeScale = 3.0 * radius;
+            }
+            case 3u {
+                derivativeScale = 5.0 * radius * radius * radius;
+            }
+            case 4u {
+                if (radius > 0.0) {
+                    derivativeScale = 2.0 * log(radius) + 1.0;
+                }
+            }
+            default {
+                if (radius > 0.0) {
+                    derivativeScale = 1.0 / radius;
+                }
+            }
+        }
+
+        gradient += sampleWeights.values[index] * derivativeScale * offset;
+    }
+
+    return gradient;
+}
+
+fn estimateNormal(
+    point: vec3f,
+    usePoints: bool,
+    normal: bool,
+    analyticalGradient: bool,
+) -> vec3f {
     let epsilon = sceneUniforms.epsilon;
-    let e = vec2f(epsilon, 0.0);
-    let gradient = sceneSdf(point, usePoints) - 
-            vec3f(sceneSdf(point - e.xyy, usePoints), 
-                  sceneSdf(point - e.yxy, usePoints),
-                  sceneSdf(point - e.yyx, usePoints));
+    var gradient: vec3f;
+    if (analyticalGradient && !usePoints) {
+        gradient = rbfGradient(point);
+    } else {
+        let e = vec2f(epsilon, 0.0);
+        gradient = (
+            sceneSdf(point, usePoints) -
+            vec3f(
+                sceneSdf(point - e.xyy, usePoints),
+                sceneSdf(point - e.yxy, usePoints),
+                sceneSdf(point - e.yyx, usePoints),
+            )
+        ) / epsilon;
+    }
     // let xOffset = vec3f(epsilon, 0.0, 0.0);
     // let yOffset = vec3f(0.0, epsilon, 0.0);
     // let zOffset = vec3f(0.0, 0.0, epsilon);
@@ -426,7 +488,7 @@ fn estimateNormal(point: vec3f, usePoints: bool, normal: bool) -> vec3f {
     if (normal) {
         return normalize(gradient);
     }
-    return gradient / epsilon;
+    return gradient;
 }
 
 fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
@@ -492,7 +554,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     }
 
     let point = rayOrigin + rayDirection * hitDistance;
-    let normal = estimateNormal(point, hitPoints, true);
+    let normal = estimateNormal(point, hitPoints, true, !hitPoints);
     let baseColor = select(vec3f(0.93, 0.32, 0.25), vec3f(0.96, 0.84, 0.23), hitPoints);
 
     // final color with light
