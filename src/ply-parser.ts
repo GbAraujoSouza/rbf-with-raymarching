@@ -8,7 +8,7 @@ export interface PlyOrientedPoint {
 export interface PlyParserOptions {
     normalize?: boolean;
     targetSize?: number;
-    maxPoints?: number;
+    maxPoints: number;
     flipNormalsOutward?: boolean;
 }
 
@@ -22,7 +22,7 @@ interface PlyHeader {
 export class PlyParser {
     static extractPositionsAndNormals(
         plyFile: string,
-        options: PlyParserOptions = {},
+        options: PlyParserOptions,
     ): PlyOrientedPoint[] {
         const lines = plyFile.split("\n");
         const header = this.parseHeader(lines);
@@ -181,7 +181,7 @@ export class PlyParser {
         for (let faceIndex = 0; faceIndex < header.faceCount; faceIndex += 1) {
             const line = lines[firstFaceLine + faceIndex]?.trim();
 
-            const indices: number[] = this.parseFaceIndices(line, faceIndex);
+            const indices: number[] = this.parseFaceIndices(line);
 
             signedVolume += this.accumulateTriangleNormal(
                 vertices,
@@ -217,7 +217,7 @@ export class PlyParser {
         return vec3.dot(a, vec3.cross(b, c)) / 6;
     }
 
-    private static parseFaceIndices(line: string, faceIndex: number): number[] {
+    private static parseFaceIndices(line: string): number[] {
         const values = line
             .split(/\s+/)
             .map((value) => Number.parseInt(value, 10));
@@ -267,9 +267,9 @@ export class PlyParser {
 
     private static downsample(
         points: PlyOrientedPoint[],
-        maxPoints?: number,
+        maxPoints: number,
     ): PlyOrientedPoint[] {
-        if (!maxPoints || maxPoints <= 0 || points.length <= maxPoints) {
+        if (points.length <= maxPoints) {
             return points;
         }
 
