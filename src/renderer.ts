@@ -160,7 +160,6 @@ export class Renderer {
         }
         this.context = context;
 
-        //const format = navigator.gpu.getPreferredCanvasFormat();
         this.format = "bgra8unorm";
 
         this.context.configure({
@@ -300,6 +299,8 @@ export class Renderer {
             size: this.rbfFit.weights.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
+
+        // Not yet initialized buffer, so start with 1 value
         this.lipschitzBuffer = this.createLipschitzBuffer(
             new Float32Array([1]),
         );
@@ -646,14 +647,11 @@ export class Renderer {
     rebuildLipschitzGrid(rebuildBindGroup: boolean = true): void {
         const config: LipschitzGridConfig = {
             resolution:
-                this.experimentState.rayMarchingConfig
-                    .lipschitzGridResolution,
+                this.experimentState.rayMarchingConfig.lipschitzGridResolution,
             samplesPerAxis:
-                this.experimentState.rayMarchingConfig
-                    .lipschitzSamplesPerAxis,
+                this.experimentState.rayMarchingConfig.lipschitzSamplesPerAxis,
             safetyFactor:
-                this.experimentState.rayMarchingConfig
-                    .lipschitzSafetyFactor,
+                this.experimentState.rayMarchingConfig.lipschitzSafetyFactor,
         };
         const start = performance.now();
         const grid = buildLipschitzGrid(
@@ -690,7 +688,7 @@ export class Renderer {
         values: Float32Array<ArrayBuffer>,
     ): GPUBuffer {
         const buffer = this.device.createBuffer({
-            size: Math.max(values.byteLength, 4),
+            size: values.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
         this.device.queue.writeBuffer(buffer, 0, values);

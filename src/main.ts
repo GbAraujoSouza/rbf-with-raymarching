@@ -18,7 +18,6 @@ const renderer = new Renderer(canvas);
 
 async function initializeApplication(): Promise<void> {
     await renderer.initialize();
-    setupUI(renderer);
 
     const plotCanvas = document.querySelector<HTMLCanvasElement>(
         "#rbf-distance-plot",
@@ -30,9 +29,18 @@ async function initializeApplication(): Promise<void> {
         throw new Error("Missing required RBF distance plot nodes.");
     }
 
-    const distancePlot = new RbfDistancePlot(plotCanvas, plotStatus);
+    const distancePlot = new RbfDistancePlot(
+        plotCanvas,
+        plotStatus,
+        renderer.experimentState.rayMarchingConfig,
+    );
     renderer.onRbfFitChanged((fit, config) => {
         distancePlot.scheduleAnalysis(fit, config);
+    });
+    setupUI(renderer, () => {
+        distancePlot.updateStepStrategy(
+            renderer.experimentState.rayMarchingConfig,
+        );
     });
 }
 

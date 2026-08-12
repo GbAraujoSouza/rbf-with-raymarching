@@ -52,7 +52,6 @@ export function createBuiltInRbfFit(
             samples = createTorusConstraintSamples(config);
             break;
         case "dragon":
-            //samples = createObjectConstraintSamples(config);
             samples = createPlyObjectConstraintSamples(config, dragonPly);
             break;
         case "bunny":
@@ -176,7 +175,7 @@ function createPlyObjectConstraintSamples(
             normalize: true,
             targetSize: config.sphereRadius * 2,
             maxPoints: config.surfaceSampleCount,
-            flipNormalsOutward: true,
+            flipNormalsOutward: false,
         });
 
     for (const orientedPoint of orientedPoints) {
@@ -434,7 +433,7 @@ function solveRbfWeights(
         M.push(matrixRow);
     }
 
-    const LU = numeric.LU(M);
+    const LU = numeric.LU(M, true);
     const solvedWeights = numeric.LUsolve(LU, targets);
 
     return new Float32Array(solvedWeights);

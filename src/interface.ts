@@ -2,7 +2,10 @@ import { Renderer } from "./renderer";
 import { RenderBackend, StepStrategy } from "./experiment";
 import { RbfKernel } from "./rbf";
 
-export function setupUI(renderer: Renderer) {
+export function setupUI(
+    renderer: Renderer,
+    onRayMarchingConfigChanged?: () => void,
+) {
     const experimentState = renderer.experimentState;
 
     // Show Control Points
@@ -64,6 +67,7 @@ export function setupUI(renderer: Renderer) {
             ) {
                 renderer.ensureLipschitzGrid();
             }
+            onRayMarchingConfigChanged?.();
         });
     }
 
@@ -96,6 +100,7 @@ export function setupUI(renderer: Renderer) {
         obj: any,
         key: string,
         isInt: boolean = false,
+        onChange?: () => void,
     ) {
         const slider = document.getElementById(id) as HTMLInputElement;
         const valDisplay = document.getElementById(valId) as HTMLSpanElement;
@@ -110,6 +115,7 @@ export function setupUI(renderer: Renderer) {
             const val = isInt ? parseInt(valStr, 10) : parseFloat(valStr);
             obj[key] = val;
             valDisplay.innerText = valStr;
+            onChange?.();
         });
     }
 
@@ -119,6 +125,8 @@ export function setupUI(renderer: Renderer) {
         "val-rm-epsilon",
         experimentState.rayMarchingConfig,
         "epsilon",
+        false,
+        onRayMarchingConfigChanged,
     );
     bindSlider(
         "rng-rm-maxdist",
@@ -138,12 +146,16 @@ export function setupUI(renderer: Renderer) {
         "val-rm-corlinear",
         experimentState.rayMarchingConfig,
         "correctionLinear",
+        false,
+        onRayMarchingConfigChanged,
     );
     bindSlider(
         "rng-rm-corpower",
         "val-rm-corpower",
         experimentState.rayMarchingConfig,
         "correctionPower",
+        false,
+        onRayMarchingConfigChanged,
     );
     bindSlider(
         "rng-rm-lipschitz-resolution",

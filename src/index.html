@@ -24,9 +24,9 @@
                     aria-label="Scatter plot comparing absolute RBF values with sampled zero-set distances"
                 ></canvas>
             </div>
-            <p class="analysis-caption">
-                |RBF| × sampled zero-set distance
-            </p>
+            <!-- <p class="analysis-caption">
+                Selected step × sampled zero-set distance
+            </p> -->
         </aside>
         <div id="config-modal" class="config-modal">
             <div class="modal-header">
@@ -181,9 +181,7 @@
                 <div class="control-group">
                     <label
                         >Gradient Samples Per Axis
-                        <span
-                            class="val-display"
-                            id="val-rm-lipschitz-samples"
+                        <span class="val-display" id="val-rm-lipschitz-samples"
                             >3</span
                         ></label
                     >
@@ -199,9 +197,7 @@
                 <div class="control-group">
                     <label
                         >Lipschitz Safety Factor
-                        <span
-                            class="val-display"
-                            id="val-rm-lipschitz-safety"
+                        <span class="val-display" id="val-rm-lipschitz-safety"
                             >1.2</span
                         ></label
                     >
@@ -243,7 +239,7 @@
                         type="range"
                         id="rng-rbf-samples"
                         min="8"
-                        max="2000"
+                        max="40000"
                         step="1"
                         value="32"
                     />

@@ -1,8 +1,9 @@
 import { Vec3, vec3 } from "wgpu-matrix";
 import { evaluateRbfField } from "./rbf-field";
+import { evaluateRbfGradient } from "./lipschitz-grid";
 import { RbfFitConfig, RbfFitResult } from "./rbf";
 
-export const RBF_DISTANCE_GRID_RESOLUTION = 20;
+export const RBF_DISTANCE_GRID_RESOLUTION = 16;
 
 const ZERO_TOLERANCE = 1e-8;
 
@@ -16,8 +17,10 @@ export interface RbfGridSamples {
 }
 
 export interface RbfDistanceSample {
+    position: Vec3;
     rbf: number;
     dist: number;
+    gradientMagnitude: number;
 }
 
 export interface RbfDistanceAnalysis {
@@ -27,12 +30,7 @@ export interface RbfDistanceAnalysis {
     elapsedMilliseconds: number;
 }
 
-function gridIndex(
-    x: number,
-    y: number,
-    z: number,
-    size: number,
-): number {
+function gridIndex(x: number, y: number, z: number, size: number): number {
     return z * size * size + y * size + x;
 }
 
@@ -110,8 +108,7 @@ export function findZeroCrossings(grid: RbfGridSamples): Vec3[] {
 
         const uIsZero = Math.abs(u) <= ZERO_TOLERANCE;
         const vIsZero = Math.abs(v) <= ZERO_TOLERANCE;
-        if ((!uIsZero && !vIsZero && (u < 0) === (v < 0)) ||
-            (uIsZero && vIsZero)) {
+        if ((!uIsZero && !vIsZero && u < 0 === v < 0) || (uIsZero && vIsZero)) {
             return;
         }
 
@@ -167,6 +164,8 @@ export function findZeroCrossings(grid: RbfGridSamples): Vec3[] {
 export function calculateDistances(
     grid: RbfGridSamples,
     zeroes: Vec3[],
+    fit: RbfFitResult,
+    config: RbfFitConfig,
 ): RbfDistanceSample[] {
     if (zeroes.length === 0) {
         return [];
@@ -178,11 +177,7 @@ export function calculateDistances(
         for (let y = 0; y < grid.size; y++) {
             for (let x = 0; x < grid.size; x++) {
                 const position = gridPosition(grid, x, y, z);
-                const fieldValue =
-                    grid.values[gridIndex(x, y, z, grid.size)];
-                if (!Number.isFinite(fieldValue)) {
-                    continue;
-                }
+                const fieldValue = grid.values[gridIndex(x, y, z, grid.size)];
 
                 let minimumSquaredDistance = Number.POSITIVE_INFINITY;
                 for (const zero of zeroes) {
@@ -199,8 +194,12 @@ export function calculateDistances(
                 const dist = Math.sqrt(minimumSquaredDistance);
                 if (Number.isFinite(dist)) {
                     distances.push({
+                        position,
                         rbf: Math.abs(fieldValue),
                         dist,
+                        gradientMagnitude: vec3.length(
+                            evaluateRbfGradient(position, fit, config),
+                        ),
                     });
                 }
             }
@@ -218,7 +217,7 @@ export function analyzeRbfDistance(
     const start = performance.now();
     const grid = sampleBoundingBox(fit, config, resolution);
     const zeroes = findZeroCrossings(grid);
-    const samples = calculateDistances(grid, zeroes);
+    const samples = calculateDistances(grid, zeroes, fit, config);
 
     return {
         samples,
