@@ -65,138 +65,48 @@ export function buildLipschitzGrid(
         Math.floor(gridConfig.samplesPerAxis),
     );
     const safetyFactor = Math.max(1, gridConfig.safetyFactor);
-    const latticeIntervalsPerCell = samplesPerAxis - 1;
-    const latticeResolution =
-        resolution * latticeIntervalsPerCell + 1;
     const gradientSampleCount =
-        latticeResolution * latticeResolution * latticeResolution;
-    const gradientMagnitudes = new Float32Array(gradientSampleCount);
+        resolution * resolution * resolution *
+        samplesPerAxis * samplesPerAxis * samplesPerAxis;
     const boxMin = vec3.create(...fit.boxMin);
     const boxMax = vec3.create(...fit.boxMax);
     const boxSize = vec3.subtract(boxMax, boxMin);
     const cellSize = vec3.scale(boxSize, 1 / resolution);
 
-    for (let z = 0; z < latticeResolution; z += 1) {
-        const zRatio = z / (latticeResolution - 1);
-        for (let y = 0; y < latticeResolution; y += 1) {
-            const yRatio = y / (latticeResolution - 1);
-            for (let x = 0; x < latticeResolution; x += 1) {
-                const xRatio = x / (latticeResolution - 1);
-                const point = vec3.create(
-                    boxMin[0] + boxSize[0] * xRatio,
-                    boxMin[1] + boxSize[1] * yRatio,
-                    boxMin[2] + boxSize[2] * zRatio,
-                );
-                const gradient = evaluateRbfGradient(
-                    point,
-                    fit,
-                    rbfConfig,
-                );
-                const latticeIndex =
-                    z * latticeResolution * latticeResolution +
-                    y * latticeResolution +
-                    x;
-                gradientMagnitudes[latticeIndex] = vec3.length(gradient);
-            }
-        }
-    }
-
     const cellCount = resolution * resolution * resolution;
-    const rawBounds = new Float32Array(cellCount);
-    for (let cellZ = 0; cellZ < resolution; cellZ += 1) {
-        for (let cellY = 0; cellY < resolution; cellY += 1) {
-            for (let cellX = 0; cellX < resolution; cellX += 1) {
-                let maximumGradient = 0;
-                for (
-                    let sampleZ = 0;
-                    sampleZ < samplesPerAxis;
-                    sampleZ += 1
-                ) {
-                    for (
-                        let sampleY = 0;
-                        sampleY < samplesPerAxis;
-                        sampleY += 1
-                    ) {
-                        for (
-                            let sampleX = 0;
-                            sampleX < samplesPerAxis;
-                            sampleX += 1
-                        ) {
-                            const latticeX =
-                                cellX * latticeIntervalsPerCell + sampleX;
-                            const latticeY =
-                                cellY * latticeIntervalsPerCell + sampleY;
-                            const latticeZ =
-                                cellZ * latticeIntervalsPerCell + sampleZ;
-                            const latticeIndex =
-                                latticeZ *
-                                    latticeResolution *
-                                    latticeResolution +
-                                latticeY * latticeResolution +
-                                latticeX;
-                            maximumGradient = Math.max(
-                                maximumGradient,
-                                gradientMagnitudes[latticeIndex],
-                            );
-                        }
-                    }
-                }
-
-                rawBounds[
-                    flattenGridIndex(
-                        cellX,
-                        cellY,
-                        cellZ,
-                        resolution,
-                        resolution,
-                    )
-                ] = maximumGradient;
-            }
-        }
-    }
-
     const values = new Float32Array(cellCount);
     let minimumBound = Infinity;
     let maximumBound = 0;
     for (let cellZ = 0; cellZ < resolution; cellZ += 1) {
         for (let cellY = 0; cellY < resolution; cellY += 1) {
             for (let cellX = 0; cellX < resolution; cellX += 1) {
-                let neighborhoodMaximum = 0;
-                for (let offsetZ = -1; offsetZ <= 1; offsetZ += 1) {
-                    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
-                        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-                            const neighborX = cellX + offsetX;
-                            const neighborY = cellY + offsetY;
-                            const neighborZ = cellZ + offsetZ;
-                            if (
-                                neighborX < 0 ||
-                                neighborX >= resolution ||
-                                neighborY < 0 ||
-                                neighborY >= resolution ||
-                                neighborZ < 0 ||
-                                neighborZ >= resolution
-                            ) {
-                                continue;
-                            }
-
-                            neighborhoodMaximum = Math.max(
-                                neighborhoodMaximum,
-                                rawBounds[
-                                    flattenGridIndex(
-                                        neighborX,
-                                        neighborY,
-                                        neighborZ,
-                                        resolution,
-                                        resolution,
-                                    )
-                                ],
+                let maximumGradient = 0;
+                for (let sampleZ = 0; sampleZ < samplesPerAxis; sampleZ += 1) {
+                    const zRatio = sampleZ / (samplesPerAxis - 1);
+                    for (let sampleY = 0; sampleY < samplesPerAxis; sampleY += 1) {
+                        const yRatio = sampleY / (samplesPerAxis - 1);
+                        for (let sampleX = 0; sampleX < samplesPerAxis; sampleX += 1) {
+                            const xRatio = sampleX / (samplesPerAxis - 1);
+                            const point = vec3.create(
+                                boxMin[0] + (cellX + xRatio) * cellSize[0],
+                                boxMin[1] + (cellY + yRatio) * cellSize[1],
+                                boxMin[2] + (cellZ + zRatio) * cellSize[2],
+                            );
+                            maximumGradient = Math.max(
+                                maximumGradient,
+                                vec3.length(
+                                    evaluateRbfGradient(
+                                        point,
+                                        fit,
+                                        rbfConfig,
+                                    ),
+                                ),
                             );
                         }
                     }
                 }
-
                 const bound = Math.max(
-                    neighborhoodMaximum * safetyFactor,
+                    maximumGradient * safetyFactor,
                     MINIMUM_LIPSCHITZ_BOUND,
                 );
                 const cellIndex = flattenGridIndex(
