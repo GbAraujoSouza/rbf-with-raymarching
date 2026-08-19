@@ -38,6 +38,7 @@ struct SceneUniforms {
 @group(0) @binding(2) var<storage, read> samplePositions: SamplePositions;
 @group(0) @binding(3) var<storage, read> sampleWeights: SampleWeights;
 @group(0) @binding(4) var<storage, read> lipschitzValues: LipschitzValues;
+@group(0) @binding(5) var<storage, read_write> metricsWorkBuffer: array<f32>;
 
 struct SamplePositions {
     values: array<vec4f>,
@@ -143,6 +144,9 @@ fn sceneSdf(point: vec3f, usePoints: bool) -> f32 {
     }
 
     return rbfField(point);
+    // let rbfSurfaceDist = rbfField(point);
+    // let groundDist = point.y - 0.1;
+    // return min(rbfSurfaceDist, groundDist);
 }
 
 fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
@@ -379,10 +383,6 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
                 stepDistance = calculateStep(distanceToSurface, point);
             }
             
-            // let distToBounding = length(point) - 1.0;
-            // if (distToBounding > 0.0) {
-            //     stepDistance = distToBounding;
-            // }
         }
 
         if (
@@ -533,7 +533,13 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     let showPoints = sceneUniforms.screenAndCounts.w > 0.5;
 
     // Call "RayMarch" function
-    let rbfResult = shortestDistanceToSurface(rayOrigin, rayDirection, false);
+    let rbfResult: MarchingResult = shortestDistanceToSurface(rayOrigin, rayDirection, false);
+
+    metricsWorkBuffer[
+        GlobalInvocationId.y * 
+        u32(screenSize.x) + 
+        GlobalInvocationId.x] = f32(rbfResult.distance);
+
     let rbfDistance = rbfResult.distance;
 
     var hitDistance = rbfDistance;
