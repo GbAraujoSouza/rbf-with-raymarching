@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "types": ["@webgpu/types"],
+    "types": ["@webgpu/types", "node"],
     "strict": true,
     "sourceMap": true,
     "esModuleInterop": true,

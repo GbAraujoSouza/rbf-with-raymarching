@@ -1,6 +1,8 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 
+const fs = require("fs");
+
 module.exports = (env = {}, argv = {}) => {
   const mode = argv.mode ?? "development";
   const isProduction = mode === "production";
@@ -54,6 +56,30 @@ module.exports = (env = {}, argv = {}) => {
       })
     ],
     devServer: {
+      setupMiddlewares: (middlewares, devServer) => {
+        devServer.app.post("/write-metrics", (req, res) => {
+            let contents = "";
+
+            req.setEncoding("utf8");
+            req.on("data", chunk => contents += chunk);
+
+            req.on("end", () => {
+                let index = 1;
+                let outputPath;
+
+                do {
+                    outputPath = path.resolve(__dirname, `metrics-${index}.txt`);
+                    index++;
+                } while (fs.existsSync(outputPath));
+
+                fs.writeFileSync(outputPath, contents);
+                console.log(`Metrics saved to ${outputPath}`);
+            })
+
+            res.end();
+        })
+        return middlewares;
+      },
       static: {
         directory: path.resolve(__dirname, "dist")
       },
