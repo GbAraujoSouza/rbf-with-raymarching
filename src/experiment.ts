@@ -58,7 +58,7 @@ export interface ExperimentState {
 }
 
 export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
-    sceneId: "torus",
+    sceneId: "bunny",
     renderMode: RenderMode.shaded,
     marchingCubesConfig: {
         resolution: 32,
@@ -66,7 +66,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         extraPadding: 0,
     },
     rayMarchingConfig: {
-        strategy: StepStrategy.naive,
+        strategy: StepStrategy.exponentialCorrection,
         epsilon: 1e-4,
         maxDistance: 20,
         maxSteps: 255,
@@ -77,13 +77,13 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         lipschitzSafetyFactor: 1.2,
     },
     rbfConfig: {
-        surfaceSampleCount: 32,
+        surfaceSampleCount: 1000,
         gaussianEpsilon: 1.35,
         sphereRadius: 1,
         debugPointRadius: 0.02,
         normalOffset: 0.1,
         regularization: 0.001,
-        kernel: RbfKernel.thinPlate,
+        kernel: RbfKernel.linear,
     },
     showControlPoints: false,
     renderBackend: RenderBackend.rayMarching,
