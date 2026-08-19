@@ -40,6 +40,8 @@ export class Renderer {
     positionsBuffer!: GPUBuffer;
     weightsBuffer!: GPUBuffer;
     lipschitzBuffer!: GPUBuffer;
+    metricsWorkBuffer!: GPUBuffer;
+    metricsResultBuffer!: GPUBuffer;
 
     rbfFit!: RbfFitResult;
     lipschitzGrid?: LipschitzGrid;
@@ -72,6 +74,8 @@ export class Renderer {
     private readonly rbfFitListeners = new Set<
         (fit: RbfFitResult, config: RbfFitConfig) => void
     >();
+
+    private copyMetricsToBuffer: boolean = false;
 
     constructor(
         canvas: HTMLCanvasElement,
@@ -206,6 +210,11 @@ export class Renderer {
                     visibility: GPUShaderStage.COMPUTE,
                     buffer: { type: "read-only-storage" },
                 },
+                {
+                    binding: 5,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "storage" },
+                },
             ],
         });
 
@@ -300,6 +309,20 @@ export class Renderer {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
+        // ex: 1920 [pixel] x 1080 [pixel] x 4 [byper per pixel (f32)]
+        this.metricsWorkBuffer = this.device.createBuffer({
+            size: this.canvas.width * this.canvas.height * 4,
+            usage:
+                GPUBufferUsage.STORAGE |
+                GPUBufferUsage.COPY_DST |
+                GPUBufferUsage.COPY_SRC,
+        });
+
+        this.metricsResultBuffer = this.device.createBuffer({
+            size: this.canvas.width * this.canvas.height * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+
         // Not yet initialized buffer, so start with 1 value
         this.lipschitzBuffer = this.createLipschitzBuffer(
             new Float32Array([1]),
@@ -349,7 +372,7 @@ export class Renderer {
         this.sampler = this.device.createSampler(samplerDescriptor);
     }
 
-    render = () => {
+    render = async () => {
         const now = performance.now();
         this.frameCount++;
         if (now - this.lastTime >= 1000) {
@@ -380,6 +403,14 @@ export class Renderer {
             );
             computePass.end();
 
+            if (this.shouldCaptureMetrics()) {
+                encoder.copyBufferToBuffer(
+                    this.metricsWorkBuffer,
+                    this.metricsResultBuffer,
+                    this.metricsResultBuffer.size,
+                );
+            }
+
             // for every step start a render pass
             const pass = encoder.beginRenderPass({
                 colorAttachments: [
@@ -400,6 +431,10 @@ export class Renderer {
             pass.end();
             const commandBuffer = encoder.finish();
             this.device.queue.submit([commandBuffer]);
+
+            if (this.shouldCaptureMetrics()) {
+                await this.unmapToBuffer();
+            }
         }
 
         if (this.experimentState.renderBackend == RenderBackend.marchingCubes) {
@@ -431,6 +466,28 @@ export class Renderer {
 
         requestAnimationFrame(this.render);
     };
+
+    private async unmapToBuffer() {
+        await this.metricsResultBuffer.mapAsync(GPUMapMode.READ);
+        const result = new Float32Array(
+            this.metricsResultBuffer.getMappedRange().slice(),
+        );
+        this.metricsResultBuffer.unmap();
+
+        await fetch("/write-metrics", {
+            method: "POST",
+            body: result.join(", "),
+        });
+
+        this.copyMetricsToBuffer = false;
+    }
+
+    private shouldCaptureMetrics(): boolean {
+        return (
+            this.experimentState.renderBackend == RenderBackend.rayMarching &&
+            this.copyMetricsToBuffer
+        );
+    }
 
     /**
      * Setup camera position (eye position)
@@ -620,6 +677,8 @@ export class Renderer {
             this.rebuildMarchingCubesMesh();
         }
         this.notifyRbfFitChanged();
+
+        this.copyMetricsToBuffer = true;
     }
 
     onRbfFitChanged(
@@ -697,6 +756,7 @@ export class Renderer {
 
     private rebuildComputeBindGroup(): void {
         this.computeBindGroup = this.device.createBindGroup({
+            label: "Compute shader bind group",
             layout: this.computeBindGroupLayout,
             entries: [
                 {
@@ -718,6 +778,10 @@ export class Renderer {
                 {
                     binding: 4,
                     resource: { buffer: this.lipschitzBuffer },
+                },
+                {
+                    binding: 5,
+                    resource: { buffer: this.metricsWorkBuffer },
                 },
             ],
         });
