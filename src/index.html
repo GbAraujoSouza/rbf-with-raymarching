@@ -73,11 +73,11 @@
                 <div class="control-group">
                     <label>Kernel</label>
                     <select id="sel-kernel">
-                        <option value="linear" selected>Linear</option>
+                        <option value="linear">Linear</option>
                         <option value="gaussian">Gaussian</option>
                         <option value="cubic">Cubic</option>
                         <option value="quintic">Quintic</option>
-                        <option value="thinPlate">Thin Plate</option>
+                        <option value="thinPlate" selected>Thin Plate</option>
                     </select>
                 </div>
                 <div class="control-group">
@@ -212,6 +212,9 @@
                 </div>
                 <button id="btn-apply-lipschitz" class="btn-primary">
                     Apply Lipschitz Grid
+                </button>
+                <button id="btn-capture-metrics" class="btn-primary">
+                    Capture Metrics
                 </button>
             </div>
 

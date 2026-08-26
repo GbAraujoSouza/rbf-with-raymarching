@@ -55,7 +55,7 @@ struct LipschitzValues {
 
 struct MarchingResult {
     distance: f32,
-    steps: u32,
+    stepCount: u32,
 }
 
 struct CellLocalLipschitzSteps {
@@ -325,7 +325,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     let hitBox: RayBoxIntercept = intersectAABB(localRayOrigin, localRayDirection, boxMin, boxMax);
     if (!hitBox.hit) {
         result.distance = maxDistance;
-        result.steps = 0;
+        result.stepCount = 0u;
         return result;
     }
 
@@ -334,6 +334,7 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     for (var step: u32 = 0; step < u32(sceneUniforms.maxSteps); step += 1) {
         let point = localRayOrigin + depth * localRayDirection;
         let fieldValue = sceneSdf(point, usePoints);
+        let stepCount = step + 1u;
         let distanceToSurface = abs(fieldValue);
         let strategyId = u32(sceneUniforms.stepStrategy);
         var lipschitzSteps = CellLocalLipschitzSteps(
@@ -354,19 +355,19 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
         if (usePoints) {
             if (distanceToSurface < epsilon) {
                 result.distance = depth;
-                result.steps = step;
+                result.stepCount = stepCount;
                 return result;
             }
         } else {
             if (fieldValue < 0.0) {
                 result.distance = depth;
-                result.steps = step;
+                result.stepCount = stepCount;
                 return result;
             }
             if (strategyId == STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ) {
                 if (lipschitzSteps.surface <= epsilon) {
                     result.distance = depth;
-                    result.steps = step;
+                    result.stepCount = stepCount;
                     return result;
                 }
             }
@@ -397,13 +398,13 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
 
         if (depth >= endDepth) {
             result.distance = maxDistance;
-            result.steps = step;
+            result.stepCount = stepCount;
             return result;
         }
     }
 
     result.distance = maxDistance;
-    result.steps = u32(sceneUniforms.maxSteps);
+    result.stepCount = u32(sceneUniforms.maxSteps);
     return result;
 }
 
@@ -566,10 +567,13 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     // Call "RayMarch" function
     let rbfResult: MarchingResult = shortestDistanceToSurface(rayOrigin, rayDirection, false);
 
-    metricsWorkBuffer[
+    let pixelIndex =
         GlobalInvocationId.y * 
         u32(screenSize.x) + 
-        GlobalInvocationId.x] = f32(rbfResult.distance);
+        GlobalInvocationId.x;
+    let metricIndex = pixelIndex * 2u;
+    metricsWorkBuffer[metricIndex] = rbfResult.distance;
+    metricsWorkBuffer[metricIndex + 1u] = f32(rbfResult.stepCount);
 
     let rbfDistance = rbfResult.distance;
 
@@ -598,8 +602,8 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     let shaded = phong(baseColor, point, normal);
 
     if (sceneUniforms.renderMode == 1) {
-        let steps = rbfResult.steps;
-        let stepIntensity = f32(steps)/f32(u32(sceneUniforms.maxSteps));
+        let stepCount = rbfResult.stepCount;
+        let stepIntensity = f32(stepCount)/f32(u32(sceneUniforms.maxSteps));
         // Heatmap: Blue (cold/few steps) to Red (hot/many steps)
         let stepGradientColor = mix(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), stepIntensity);
 

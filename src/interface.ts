@@ -187,6 +187,15 @@ export function setupUI(
         });
     }
 
+    const btnCaptureMetrics = document.getElementById(
+        "btn-capture-metrics",
+    ) as HTMLButtonElement;
+    if (btnCaptureMetrics) {
+        btnCaptureMetrics.addEventListener("click", () => {
+            renderer.captureMetrics();
+        });
+    }
+
     // RBF Config params
     bindSlider(
         "rng-rbf-samples",

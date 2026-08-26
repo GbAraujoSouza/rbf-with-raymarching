@@ -100,6 +100,17 @@ export class Renderer {
         this.meshRenderer.setMesh(mesh);
     }
 
+    captureMetrics(): void {
+        if (
+            this.experimentState.renderBackend !== RenderBackend.rayMarching
+        ) {
+            console.warn("Metrics capture is only available for Ray Marching.");
+            return;
+        }
+
+        this.copyMetricsToBuffer = true;
+    }
+
     async initialize() {
         await this.setupDevice();
 
@@ -309,9 +320,15 @@ export class Renderer {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
-        // ex: 1920 [pixel] x 1080 [pixel] x 4 [byper per pixel (f32)]
+        const metricsBufferSize =
+            this.canvas.width *
+            this.canvas.height *
+            2 *
+            Float32Array.BYTES_PER_ELEMENT;
+
+        // Two f32 values per pixel: traveled distance and step count.
         this.metricsWorkBuffer = this.device.createBuffer({
-            size: this.canvas.width * this.canvas.height * 4,
+            size: metricsBufferSize,
             usage:
                 GPUBufferUsage.STORAGE |
                 GPUBufferUsage.COPY_DST |
@@ -319,7 +336,7 @@ export class Renderer {
         });
 
         this.metricsResultBuffer = this.device.createBuffer({
-            size: this.canvas.width * this.canvas.height * 4,
+            size: metricsBufferSize,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
         });
 
@@ -474,9 +491,21 @@ export class Renderer {
         );
         this.metricsResultBuffer.unmap();
 
+        const snapshot = {
+            version: 1,
+            width: this.canvas.width,
+            height: this.canvas.height,
+            sceneId: this.experimentState.sceneId,
+            rbfConfig: this.experimentState.rbfConfig,
+            rayMarchingConfig: this.experimentState.rayMarchingConfig,
+            metricLayout: ["distance", "stepCount"],
+            metrics: Array.from(result),
+        };
+
         await fetch("/write-metrics", {
             method: "POST",
-            body: result.join(", "),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(snapshot),
         });
 
         this.copyMetricsToBuffer = false;
@@ -678,8 +707,6 @@ export class Renderer {
             this.rebuildMarchingCubesMesh();
         }
         this.notifyRbfFitChanged();
-
-        this.copyMetricsToBuffer = true;
     }
 
     onRbfFitChanged(

@@ -68,15 +68,14 @@ module.exports = (env = {}, argv = {}) => {
                 let outputPath;
 
                 do {
-                    outputPath = path.resolve(__dirname, `metrics-${index}.txt`);
+                    outputPath = path.resolve(__dirname, `metrics-${index}.json`);
                     index++;
                 } while (fs.existsSync(outputPath));
 
                 fs.writeFileSync(outputPath, contents);
                 console.log(`Metrics saved to ${outputPath}`);
+                res.status(201).end();
             })
-
-            res.end();
         })
         return middlewares;
       },
