@@ -177,41 +177,38 @@ function createPlyObjectConstraintSamples(
             flipNormalsOutward: false,
         });
 
-    const selectedPoints = selectPlyPointsGreedy(
+    return selectPlySamplesGreedy(
         orientedPoints,
         config.surfaceSampleCount,
         config,
     );
-
-    return createPlyConstraintSamples(selectedPoints, config);
 }
 
 function createPlyConstraintSamples(
     orientedPoints: PlyOrientedPoint[],
     config: RbfFitConfig,
 ): RbfSample[] {
-    const samples: RbfSample[] = [];
+    return orientedPoints.flatMap((point) =>
+        createPlyPointConstraintSamples(point, config),
+    );
+}
 
-    for (const orientedPoint of orientedPoints) {
+function createPlyPointConstraintSamples(
+    point: PlyOrientedPoint,
+    config: RbfFitConfig,
+): RbfSample[] {
+    const samples: RbfSample[] = [{ position: point.position, target: 0 }];
+
+    if (config.normalOffset > 0) {
+        const offset = config.normalOffset;
         samples.push({
-            position: orientedPoint.position,
-            target: 0,
+            position: vec3.create(
+                point.position[0] + offset * point.normal[0],
+                point.position[1] + offset * point.normal[1],
+                point.position[2] + offset * point.normal[2],
+            ),
+            target: offset,
         });
-
-        if (config.normalOffset > 0) {
-            const offset = config.normalOffset;
-            samples.push({
-                position: vec3.create(
-                    orientedPoint.position[0] +
-                        offset * orientedPoint.normal[0],
-                    orientedPoint.position[1] +
-                        offset * orientedPoint.normal[1],
-                    orientedPoint.position[2] +
-                        offset * orientedPoint.normal[2],
-                ),
-                target: offset,
-            });
-        }
     }
 
     return samples;
@@ -262,109 +259,87 @@ function createXyznConstraintSamples(
     return samples;
 }
 
-function selectPlyPointsGreedy(
+function selectPlySamplesGreedy(
     allPoints: PlyOrientedPoint[],
     maxPoints: number,
     config: RbfFitConfig,
-): PlyOrientedPoint[] {
+): RbfSample[] {
     const pointLimit = Math.min(Math.floor(maxPoints), allPoints.length);
     if (pointLimit <= 0 || pointLimit === allPoints.length) {
-        return allPoints.slice(0, pointLimit);
+        return createPlyConstraintSamples(
+            allPoints.slice(0, pointLimit),
+            config,
+        );
     }
 
     const profilingStart = performance.now();
+
     const initialPointCount = Math.min(32, pointLimit);
-    const selectedPoints: PlyOrientedPoint[] = [];
+    const samplesByPoint = allPoints.map((point) =>
+        createPlyPointConstraintSamples(point, config),
+    );
+    const selectedPointIndices: number[] = [];
     const selectedIndices = new Set<number>();
     const initialStep = allPoints.length / initialPointCount;
-    const pointsPerIteration = 50;
 
     for (let index = 0; index < initialPointCount; index += 1) {
         const pointIndex = Math.floor(index * initialStep);
         selectedIndices.add(pointIndex);
-        selectedPoints.push(allPoints[pointIndex]);
+        selectedPointIndices.push(pointIndex);
     }
 
-    while (selectedPoints.length < pointLimit) {
+    while (selectedPointIndices.length < pointLimit) {
         const iterationStart = performance.now();
-        const selectedSamples = createPlyConstraintSamples(
-            selectedPoints,
-            config,
+        const selectedSamples = selectedPointIndices.flatMap(
+            (index) => samplesByPoint[index],
         );
         const weights = solveRbfWeights(selectedSamples, config);
-        const residuals: { index: number; value: number }[] = [];
+        let nextPointIndex: number | undefined;
+        let largestResidual = -Infinity;
 
         for (let index = 0; index < allPoints.length; index += 1) {
             if (selectedIndices.has(index)) {
                 continue;
             }
 
-            const point = allPoints[index];
-            const surfaceValue = evaluateRbfAt(
-                point.position,
-                selectedSamples,
-                weights,
-                config,
-            );
-            let residual = Math.abs(surfaceValue);
-
-            if (config.normalOffset > 0) {
-                const offsetPosition = vec3.create(
-                    point.position[0] + config.normalOffset * point.normal[0],
-                    point.position[1] + config.normalOffset * point.normal[1],
-                    point.position[2] + config.normalOffset * point.normal[2],
-                );
-                const offsetValue = evaluateRbfAt(
-                    offsetPosition,
+            let residual = 0;
+            for (const sample of samplesByPoint[index]) {
+                const value = evaluateRbfAt(
+                    sample.position,
                     selectedSamples,
                     weights,
                     config,
                 );
-                residual = Math.max(
-                    residual,
-                    Math.abs(config.normalOffset - offsetValue),
-                );
+                residual = Math.max(residual, Math.abs(sample.target - value));
             }
 
-            residuals.push({
-                index,
-                value: residual,
-            });
+            if (residual > largestResidual) {
+                largestResidual = residual;
+                nextPointIndex = index;
+            }
         }
 
-        residuals.sort((a, b) => b.value - a.value);
-
-        const amountToAdd = Math.min(
-            pointsPerIteration,
-            pointLimit - selectedPoints.length,
-            residuals.length,
-        );
-
-        for (let i = 0; i < amountToAdd; i++) {
-            const pointIndex = residuals[i].index;
-
-            selectedIndices.add(pointIndex);
-            selectedPoints.push(allPoints[pointIndex]);
-        }
-
-        if (amountToAdd === 0) {
+        if (nextPointIndex === undefined) {
             break;
         }
 
+        selectedIndices.add(nextPointIndex);
+        selectedPointIndices.push(nextPointIndex);
+
         console.log(
-            `[Greedy] points=${selectedPoints.length} ` +
+            `[Greedy] points=${selectedPointIndices.length} ` +
                 `iteration=${((performance.now() - iterationStart) / 100).toFixed(1)}s ` +
                 `heap=${getUsedHeapSize()}`,
         );
     }
 
     console.log(
-        `[Greedy] completed points=${selectedPoints.length} ` +
+        `[Greedy] completed points=${selectedPointIndices.length} ` +
             `elapsed=${((performance.now() - profilingStart) / 100 / 60).toFixed(1)}min ` +
             `heap=${getUsedHeapSize()}`,
     );
 
-    return selectedPoints;
+    return selectedPointIndices.flatMap((index) => samplesByPoint[index]);
 }
 
 function getUsedHeapSize(): string {
