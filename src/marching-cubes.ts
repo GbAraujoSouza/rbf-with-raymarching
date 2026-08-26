@@ -298,7 +298,7 @@ export function extractMarchingCubesMesh(
                     // compute normal
                     const edgeA = vec3.sub(v1, v0);
                     const edgeB = vec3.sub(v2, v0);
-                    const normal = vec3.normalize(vec3.cross(edgeA, edgeB));
+                    const normal = vec3.normalize(vec3.cross(edgeB, edgeA));
 
                     // duplicate normals for all 3 points in triangle
                     normals.push(normal[0], normal[1], normal[2]);

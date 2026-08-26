@@ -1,4 +1,4 @@
-import { Vec3, vec3 } from "wgpu-matrix";
+import { Vec3, vec3, vec4 } from "wgpu-matrix";
 
 export interface PlyOrientedPoint {
     position: Vec3;
@@ -159,9 +159,12 @@ export class PlyParser {
         }
 
         for (const normal of normals) {
-            if (vec3.length(normal) === 0) {
-                normal[1] = 1;
-            } else {
+            // if (vec3.length(normal) === 0) {
+            //     normal[1] = 1;
+            // } else {
+            //     vec3.normalize(normal, normal);
+            // }
+            if (vec3.length(normal) > 0.0) {
                 vec3.normalize(normal, normal);
             }
         }
@@ -258,6 +261,10 @@ export class PlyParser {
         for (let index = 0; index < vertices.length; index += 1) {
             const position = vertices[index];
             const normal = vec3.copy(normals[index]);
+
+            if (vec3.length(normal) === 0) {
+                continue;
+            }
 
             orientedPoints.push({ position, normal });
         }

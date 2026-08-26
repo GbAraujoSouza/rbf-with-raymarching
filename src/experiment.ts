@@ -61,7 +61,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
     sceneId: "bunny",
     renderMode: RenderMode.shaded,
     marchingCubesConfig: {
-        resolution: 32,
+        resolution: 64,
         isoValue: 0,
         extraPadding: 0,
     },
@@ -77,7 +77,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         lipschitzSafetyFactor: 1.2,
     },
     rbfConfig: {
-        surfaceSampleCount: 1000,
+        surfaceSampleCount: 200,
         gaussianEpsilon: 1.35,
         sphereRadius: 1,
         debugPointRadius: 0.02,

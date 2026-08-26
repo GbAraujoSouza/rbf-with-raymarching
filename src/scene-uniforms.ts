@@ -51,6 +51,7 @@ export interface SceneUniformInput {
     worldToObject: Mat4;
 
     maxSteps: number;
+    fieldOfView: number;
     lipschitzGridDimensions: Vec3;
 }
 
@@ -179,7 +180,7 @@ export class SceneUniforms {
             uniformData,
             SCENE_UNIFORM_SLOTS.maxSteps,
             input.maxSteps,
-            0.0,
+            input.fieldOfView,
             0.0,
             0.0
         );

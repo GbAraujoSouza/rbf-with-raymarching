@@ -28,7 +28,8 @@ struct SceneUniforms {
     boxMax: vec4f,
     worldToObject: mat4x4f,
 
-    maxSteps: f32, //this has padding
+    maxSteps: f32,
+    fieldOfView: f32,
     lipschitzGridDimensions: vec4f,
 }
 
@@ -492,6 +493,18 @@ fn estimateNormal(
 }
 
 fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
+    let lightPositions = array<vec3f, 3>(
+        vec3f(8.0, 10.0, 2.0), // key
+        vec3f(-6.0, 4.0, 8.0), // fill
+        vec3f(-5.0, 8.0, -8.0), // rim
+    );
+
+    let lightIntensities = array<f32, 3>(
+        1.0, // key
+        0.35, // fill
+        0.75, // rim
+    );
+
     let lightPosition = sceneUniforms.lightPosition.xyz;
     let lightIntensity = vec3f(1.0, 1.0, 1.0);
     let eye = sceneUniforms.cameraPosition.xyz;
@@ -500,8 +513,23 @@ fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
     let specularColor = vec3f(0.45, 0.45, 0.45);
     let shininess = 48.0;
 
-    let lightDirection = normalize(lightPosition - point);
     let viewDirection = normalize(eye - point);
+
+    var lighting = ambient;
+    for (var i = 0u; i < 3u; i++) {
+        let lightDirection = normalize(lightPositions[i] - point);
+        let reflected = normalize(reflect(-lightDirection, normal));
+        let dotLN = max(dot(lightDirection, normal), 0.0);
+        let dotRV = max(dot(reflected, viewDirection), 0.0);
+        let diffuse = diffuseColor * dotLN;
+        let specular = specularColor * pow(dotRV, shininess);
+        lighting += lightIntensities[i] * (diffuse + specular);
+    }
+
+    return lighting;
+
+    let lightDirection = normalize(lightPosition - point);
+    //let viewDirection = normalize(eye - point);
     let reflected = normalize(reflect(-lightDirection, normal));
 
     let dotLN = max(dot(lightDirection, normal), 0.0);
@@ -522,14 +550,17 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
         return;
     }
 
-    let horizontalCoeff: f32 = (f32(screenPos.x) - f32(screenSize.x) / 2.0) / f32(screenSize.x);
-    //let verticalCoeff: f32 = (f32(screenPos.y) - f32(screenSize.y) / 2.0) / f32(screenSize.x);
-    let verticalCoeff: f32 = -(f32(screenPos.y) - f32(screenSize.y) / 2.0) / f32(screenSize.x);
-
-
+    let pixelCenter = vec2f(screenPos) + vec2f(0.5);
+    let uv = pixelCenter / vec2f(screenSize);
+    let ndc = vec2f(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    let aspect = f32(screenSize.x) / f32(screenSize.y);
+    let tanHalfFovY = tan(sceneUniforms.fieldOfView * 0.5);
     let rayOrigin = sceneUniforms.cameraPosition.xyz;
-    let rayDirection = normalize(sceneUniforms.cameraForward.xyz + horizontalCoeff * sceneUniforms.cameraRight.xyz + verticalCoeff * sceneUniforms.cameraUp.xyz);
-    //let rayDir = rayDirection(input.uv);
+    let rayDirection = normalize(
+        sceneUniforms.cameraForward.xyz +
+        ndc.x * aspect * tanHalfFovY * sceneUniforms.cameraRight.xyz +
+        ndc.y * tanHalfFovY * sceneUniforms.cameraUp.xyz
+    );
     let showPoints = sceneUniforms.screenAndCounts.w > 0.5;
 
     // Call "RayMarch" function

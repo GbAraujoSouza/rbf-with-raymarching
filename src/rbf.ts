@@ -169,14 +169,28 @@ function createPlyObjectConstraintSamples(
     config: RbfFitConfig,
     plyFile: string,
 ): RbfSample[] {
-    const samples: RbfSample[] = [];
     const orientedPoints: PlyOrientedPoint[] =
         PlyParser.extractPositionsAndNormals(plyFile, {
             normalize: true,
             targetSize: config.sphereRadius * 2,
-            maxPoints: config.surfaceSampleCount,
+            maxPoints: Number.POSITIVE_INFINITY,
             flipNormalsOutward: false,
         });
+
+    const selectedPoints = selectPlyPointsGreedy(
+        orientedPoints,
+        config.surfaceSampleCount,
+        config,
+    );
+
+    return createPlyConstraintSamples(selectedPoints, config);
+}
+
+function createPlyConstraintSamples(
+    orientedPoints: PlyOrientedPoint[],
+    config: RbfFitConfig,
+): RbfSample[] {
+    const samples: RbfSample[] = [];
 
     for (const orientedPoint of orientedPoints) {
         samples.push({
@@ -197,18 +211,6 @@ function createPlyObjectConstraintSamples(
                 ),
                 target: offset,
             });
-
-            // samples.push({
-            //     position: vec3.create(
-            //         orientedPoint.position[0] -
-            //             offset * orientedPoint.normal[0],
-            //         orientedPoint.position[1] -
-            //             offset * orientedPoint.normal[1],
-            //         orientedPoint.position[2] -
-            //             offset * orientedPoint.normal[2],
-            //     ),
-            //     target: -offset,
-            // });
         }
     }
 
@@ -258,6 +260,141 @@ function createXyznConstraintSamples(
     }
 
     return samples;
+}
+
+function selectPlyPointsGreedy(
+    allPoints: PlyOrientedPoint[],
+    maxPoints: number,
+    config: RbfFitConfig,
+): PlyOrientedPoint[] {
+    const pointLimit = Math.min(Math.floor(maxPoints), allPoints.length);
+    if (pointLimit <= 0 || pointLimit === allPoints.length) {
+        return allPoints.slice(0, pointLimit);
+    }
+
+    const profilingStart = performance.now();
+    const initialPointCount = Math.min(32, pointLimit);
+    const selectedPoints: PlyOrientedPoint[] = [];
+    const selectedIndices = new Set<number>();
+    const initialStep = allPoints.length / initialPointCount;
+    const pointsPerIteration = 1;
+
+    for (let index = 0; index < initialPointCount; index += 1) {
+        const pointIndex = Math.floor(index * initialStep);
+        selectedIndices.add(pointIndex);
+        selectedPoints.push(allPoints[pointIndex]);
+    }
+
+    while (selectedPoints.length < pointLimit) {
+        const iterationStart = performance.now();
+        const selectedSamples = createPlyConstraintSamples(
+            selectedPoints,
+            config,
+        );
+        const weights = solveRbfWeights(selectedSamples, config);
+        const residuals: { index: number; value: number }[] = [];
+
+        for (let index = 0; index < allPoints.length; index += 1) {
+            if (selectedIndices.has(index)) {
+                continue;
+            }
+
+            const point = allPoints[index];
+            const surfaceValue = evaluateRbfAt(
+                point.position,
+                selectedSamples,
+                weights,
+                config,
+            );
+            let residual = Math.abs(surfaceValue);
+
+            if (config.normalOffset > 0) {
+                const offsetPosition = vec3.create(
+                    point.position[0] + config.normalOffset * point.normal[0],
+                    point.position[1] + config.normalOffset * point.normal[1],
+                    point.position[2] + config.normalOffset * point.normal[2],
+                );
+                const offsetValue = evaluateRbfAt(
+                    offsetPosition,
+                    selectedSamples,
+                    weights,
+                    config,
+                );
+                residual = Math.max(
+                    residual,
+                    Math.abs(config.normalOffset - offsetValue),
+                );
+            }
+
+            residuals.push({
+                index,
+                value: residual,
+            });
+        }
+
+        residuals.sort((a, b) => b.value - a.value);
+
+        const amountToAdd = Math.min(
+            pointsPerIteration,
+            pointLimit - selectedPoints.length,
+            residuals.length,
+        );
+
+        for (let i = 0; i < amountToAdd; i++) {
+            const pointIndex = residuals[i].index;
+
+            selectedIndices.add(pointIndex);
+            selectedPoints.push(allPoints[pointIndex]);
+        }
+
+        if (amountToAdd === 0) {
+            break;
+        }
+
+        console.log(
+            `[Greedy] points=${selectedPoints.length} ` +
+                `iteration=${((performance.now() - iterationStart) / 100).toFixed(1)}s ` +
+                `heap=${getUsedHeapSize()}`,
+        );
+    }
+
+    console.log(
+        `[Greedy] completed points=${selectedPoints.length} ` +
+            `elapsed=${((performance.now() - profilingStart) / 100).toFixed(1)}s ` +
+            `heap=${getUsedHeapSize()}`,
+    );
+
+    return selectedPoints;
+}
+
+function getUsedHeapSize(): string {
+    const memory = (
+        performance as Performance & {
+            memory?: { usedJSHeapSize: number };
+        }
+    ).memory;
+
+    if (!memory) {
+        return "unavailable";
+    }
+
+    return `${(memory.usedJSHeapSize / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function evaluateRbfAt(
+    point: Vec3,
+    samples: RbfSample[],
+    weights: Float32Array<ArrayBuffer>,
+    config: RbfFitConfig,
+): number {
+    let value = 0;
+
+    for (let index = 0; index < samples.length; index += 1) {
+        const radius = vec3.distance(point, samples[index].position);
+        value += weights[index] * kernel(radius, config);
+    }
+
+    return value;
 }
 
 function createSphereConstraintSamples(config: RbfFitConfig): RbfSample[] {

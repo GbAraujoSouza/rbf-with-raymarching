@@ -579,6 +579,7 @@ export class Renderer {
             worldToObject: this.worldToObject,
 
             maxSteps: this.experimentState.rayMarchingConfig.maxSteps,
+            fieldOfView: this.fieldOfView,
             lipschitzGridDimensions: this.lipschitzGrid
                 ? vec3.create(
                       this.lipschitzGrid.nx,
