@@ -277,7 +277,7 @@ function selectPlyPointsGreedy(
     const selectedPoints: PlyOrientedPoint[] = [];
     const selectedIndices = new Set<number>();
     const initialStep = allPoints.length / initialPointCount;
-    const pointsPerIteration = 1;
+    const pointsPerIteration = 50;
 
     for (let index = 0; index < initialPointCount; index += 1) {
         const pointIndex = Math.floor(index * initialStep);
@@ -360,7 +360,7 @@ function selectPlyPointsGreedy(
 
     console.log(
         `[Greedy] completed points=${selectedPoints.length} ` +
-            `elapsed=${((performance.now() - profilingStart) / 100).toFixed(1)}s ` +
+            `elapsed=${((performance.now() - profilingStart) / 100 / 60).toFixed(1)}min ` +
             `heap=${getUsedHeapSize()}`,
     );
 

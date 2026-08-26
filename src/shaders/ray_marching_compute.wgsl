@@ -571,9 +571,14 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
         GlobalInvocationId.y * 
         u32(screenSize.x) + 
         GlobalInvocationId.x;
-    let metricIndex = pixelIndex * 2u;
+    let metricIndex = pixelIndex * 3u;
     metricsWorkBuffer[metricIndex] = rbfResult.distance;
     metricsWorkBuffer[metricIndex + 1u] = f32(rbfResult.stepCount);
+    metricsWorkBuffer[metricIndex + 2u] = select(
+        0.0,
+        1.0,
+        rbfResult.distance < sceneUniforms.maxDistance,
+    );
 
     let rbfDistance = rbfResult.distance;
 

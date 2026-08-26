@@ -323,10 +323,10 @@ export class Renderer {
         const metricsBufferSize =
             this.canvas.width *
             this.canvas.height *
-            2 *
+            3 *
             Float32Array.BYTES_PER_ELEMENT;
 
-        // Two f32 values per pixel: traveled distance and step count.
+        // Three f32 values per pixel: traveled distance, step count, and hit.
         this.metricsWorkBuffer = this.device.createBuffer({
             size: metricsBufferSize,
             usage:
@@ -492,13 +492,12 @@ export class Renderer {
         this.metricsResultBuffer.unmap();
 
         const snapshot = {
-            version: 1,
             width: this.canvas.width,
             height: this.canvas.height,
             sceneId: this.experimentState.sceneId,
             rbfConfig: this.experimentState.rbfConfig,
             rayMarchingConfig: this.experimentState.rayMarchingConfig,
-            metricLayout: ["distance", "stepCount"],
+            metricLayout: ["distance", "stepCount", "hit"],
             metrics: Array.from(result),
         };
 

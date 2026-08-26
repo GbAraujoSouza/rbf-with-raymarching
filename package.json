@@ -7,6 +7,7 @@
     "dev": "webpack serve --mode development",
     "build": "webpack --mode production",
     "typecheck": "tsc --noEmit",
+    "compare-metrics": "node scripts/compare-metrics.ts",
     "heatmap": "node scripts/heatmap.ts",
     "offline-parser": "python3 scripts/offline-parser.py"
   },

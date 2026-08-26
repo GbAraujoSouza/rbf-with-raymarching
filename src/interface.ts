@@ -75,7 +75,7 @@ export function setupUI(
         "sel-kernel",
     ) as HTMLSelectElement;
     if (selKernel) {
-        selKernel.value = "linear";
+        selKernel.value = RbfKernel[experimentState.rbfConfig.kernel];
         selKernel.addEventListener("change", (e) => {
             experimentState.rbfConfig.kernel =
                 RbfKernel[
