@@ -34,7 +34,7 @@ interface Comparison {
     falsePositives: number;
     falseNegatives: number;
     commonHits: number;
-    rmse: number | null;
+    mae: number | null;
     baselineSteps: Stats;
     candidateSteps: Stats;
 }
@@ -71,7 +71,7 @@ function getConfigChanges(baseline: Config, candidate: Config): string {
     return changes.join("; ") || "None";
 }
 
-function calculateStats(values: number[]): Stats {
+function calculateMeanAndMedian(values: number[]): Stats {
     if (values.length === 0) {
         return { mean: null, median: null };
     }
@@ -118,14 +118,16 @@ function compare(
     let falsePositives = 0;
     let falseNegatives = 0;
     let commonHits = 0;
-    let squaredError = 0;
+    let absoluteError = 0;
     const candidateStepValues: number[] = [];
 
+    // steps at [pixel_i.dist, pixel_i.steps, pixel_i.hit]
     for (let index = 0; index < baseline.metrics.length; index += STRIDE) {
-        const baselineHit = baseline.metrics[index + 2] === 1;
-        const candidateHit = candidate.metrics[index + 2] === 1;
+        const baselineHit: boolean = baseline.metrics[index + 2] === 1;
+        const candidateHit: boolean = candidate.metrics[index + 2] === 1;
 
         if (baselineHit === candidateHit) {
+            // both missed or hitted
             agreement++;
         } else if (candidateHit) {
             falsePositives++;
@@ -135,11 +137,11 @@ function compare(
 
         if (baselineHit && candidateHit) {
             const error = candidate.metrics[index] - baseline.metrics[index];
-            squaredError += error * error;
+            absoluteError += Math.abs(error);
             commonHits++;
         }
 
-        if (baselineHit) {
+        if (candidateHit) {
             candidateStepValues.push(candidate.metrics[index + 1]);
         }
     }
@@ -154,9 +156,9 @@ function compare(
         falsePositives,
         falseNegatives,
         commonHits,
-        rmse: commonHits === 0 ? null : Math.sqrt(squaredError / commonHits),
+        mae: commonHits === 0 ? null : absoluteError / commonHits,
         baselineSteps,
-        candidateSteps: calculateStats(candidateStepValues),
+        candidateSteps: calculateMeanAndMedian(candidateStepValues),
     };
 }
 
@@ -181,7 +183,7 @@ function printReport(result: Comparison): void {
         `False negatives: ${result.falseNegatives} (${percent(result.falseNegatives, result.pixels).toFixed(2)}%)`,
     );
     console.log(
-        `Distance RMSE: ${display(result.rmse, 6)} (${result.commonHits} common hits)`,
+        `Distance MAE: ${display(result.mae, 6)} (${result.commonHits} common hits)`,
     );
     console.log(
         `Mean steps: ${display(result.baselineSteps.mean, 2)} -> ${display(result.candidateSteps.mean, 2)}`,
@@ -194,17 +196,21 @@ function printReport(result: Comparison): void {
 function printTable(results: Comparison[]): void {
     console.log("\nSummary");
     console.table(
-        results.map((result) => ({
+        results.map((result, i) => ({
             Candidate: result.candidate,
             "Config changes": result.configChanges,
             "Hit agreement": `${percent(result.agreement, result.pixels).toFixed(2)}%`,
             FP: `${percent(result.falsePositives, result.pixels).toFixed(2)}%`,
             FN: `${percent(result.falseNegatives, result.pixels).toFixed(2)}%`,
-            RMSE: display(result.rmse, 6),
-            "Base mean": display(result.baselineSteps.mean, 2),
-            "Candidate mean": display(result.candidateSteps.mean, 2),
-            "Base median": display(result.baselineSteps.median, 2),
-            "Candidate median": display(result.candidateSteps.median, 2),
+            MAE: display(result.mae, 6),
+            Mean:
+                i == 0
+                    ? display(result.baselineSteps.mean, 2)
+                    : display(result.candidateSteps.mean, 2),
+            Median:
+                i == 0
+                    ? display(result.baselineSteps.median, 2)
+                    : display(result.candidateSteps.median, 2),
         })),
     );
 }
@@ -231,7 +237,7 @@ function writeCsv(results: Comparison[]): void {
         "falseNegativeCount",
         "falseNegativePercent",
         "commonHitCount",
-        "distanceRmse",
+        "distanceMae",
         "baselineMeanSteps",
         "candidateMeanSteps",
         "baselineMedianSteps",
@@ -248,7 +254,7 @@ function writeCsv(results: Comparison[]): void {
         result.falseNegatives,
         percent(result.falseNegatives, result.pixels),
         result.commonHits,
-        result.rmse,
+        result.mae,
         result.baselineSteps.mean,
         result.candidateSteps.mean,
         result.baselineSteps.median,
@@ -273,7 +279,9 @@ function runSnapshotComparison(argv: string[]): void {
 
     const baseline = loadSnapshot(baselinePath);
     const baselineConfig = getConfig(baseline);
-    const baselineSteps = calculateStats(collectBaselineSteps(baseline));
+    const baselineSteps = calculateMeanAndMedian(
+        collectBaselineSteps(baseline),
+    );
     const baselineResult = compare(
         baseline,
         baseline,
@@ -282,7 +290,7 @@ function runSnapshotComparison(argv: string[]): void {
         baselineSteps,
     );
     baselineResult.configChanges = "Baseline";
-    baselineResult.rmse = 0;
+    baselineResult.mae = 0;
 
     console.log(
         `Baseline: ${metricFileName(baselinePath)} (${baseline.width}x${baseline.height}, ${baseline.sceneId})`,

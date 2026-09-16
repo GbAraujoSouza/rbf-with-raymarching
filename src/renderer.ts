@@ -30,6 +30,7 @@ export class Renderer {
     format!: GPUTextureFormat;
 
     bindGroup!: GPUBindGroup;
+    screenBindGroupLayout!: GPUBindGroupLayout;
     pipeline!: GPURenderPipeline;
 
     computeBindGroup!: GPUBindGroup;
@@ -231,7 +232,7 @@ export class Renderer {
 
         this.rebuildComputeBindGroup();
 
-        const bindGroupLayout = this.device.createBindGroupLayout({
+        this.screenBindGroupLayout = this.device.createBindGroupLayout({
             entries: [
                 {
                     binding: 0,
@@ -247,7 +248,7 @@ export class Renderer {
         });
 
         this.bindGroup = this.device.createBindGroup({
-            layout: bindGroupLayout,
+            layout: this.screenBindGroupLayout,
             entries: [
                 {
                     binding: 0,
@@ -279,7 +280,7 @@ export class Renderer {
         });
 
         const pipelineLayout = this.device.createPipelineLayout({
-            bindGroupLayouts: [bindGroupLayout],
+            bindGroupLayouts: [this.screenBindGroupLayout],
         });
 
         const shaderModule = this.device.createShaderModule({
@@ -320,25 +321,7 @@ export class Renderer {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
 
-        const metricsBufferSize =
-            this.canvas.width *
-            this.canvas.height *
-            3 *
-            Float32Array.BYTES_PER_ELEMENT;
-
-        // Three f32 values per pixel: traveled distance, step count, and hit.
-        this.metricsWorkBuffer = this.device.createBuffer({
-            size: metricsBufferSize,
-            usage:
-                GPUBufferUsage.STORAGE |
-                GPUBufferUsage.COPY_DST |
-                GPUBufferUsage.COPY_SRC,
-        });
-
-        this.metricsResultBuffer = this.device.createBuffer({
-            size: metricsBufferSize,
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-        });
+        this.createScreenSizedAssets();
 
         // Not yet initialized buffer, so start with 1 value
         this.lipschitzBuffer = this.createLipschitzBuffer(
@@ -363,20 +346,6 @@ export class Renderer {
             this.rebuildLipschitzGrid(false);
         }
 
-        this.gpuTexture = this.device.createTexture({
-            size: {
-                width: this.canvas.width,
-                height: this.canvas.height,
-            },
-            format: "rgba8unorm",
-            usage:
-                GPUTextureUsage.COPY_DST |
-                GPUTextureUsage.TEXTURE_BINDING |
-                GPUTextureUsage.STORAGE_BINDING,
-        });
-
-        this.gpuTextureView = this.gpuTexture.createView();
-
         const samplerDescriptor: GPUSamplerDescriptor = {
             addressModeU: "repeat",
             addressModeV: "repeat",
@@ -389,7 +358,67 @@ export class Renderer {
         this.sampler = this.device.createSampler(samplerDescriptor);
     }
 
+    private createScreenSizedAssets(): void {
+        const metricsBufferSize =
+            this.canvas.width *
+            this.canvas.height *
+            3 *
+            Float32Array.BYTES_PER_ELEMENT;
+
+        // Three f32 values per pixel: traveled distance, step count, and hit.
+        this.metricsWorkBuffer = this.device.createBuffer({
+            size: metricsBufferSize,
+            usage:
+                GPUBufferUsage.STORAGE |
+                GPUBufferUsage.COPY_DST |
+                GPUBufferUsage.COPY_SRC,
+        });
+
+        this.metricsResultBuffer = this.device.createBuffer({
+            size: metricsBufferSize,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+
+        this.gpuTexture = this.device.createTexture({
+            size: {
+                width: this.canvas.width,
+                height: this.canvas.height,
+            },
+            format: "rgba8unorm",
+            usage:
+                GPUTextureUsage.COPY_DST |
+                GPUTextureUsage.TEXTURE_BINDING |
+                GPUTextureUsage.STORAGE_BINDING,
+        });
+        this.gpuTextureView = this.gpuTexture.createView();
+    }
+
+    private resizeScreenSizedAssets(): void {
+        if (
+            this.gpuTexture.width === this.canvas.width &&
+            this.gpuTexture.height === this.canvas.height
+        ) {
+            return;
+        }
+
+        this.metricsWorkBuffer.destroy();
+        this.metricsResultBuffer.destroy();
+        this.gpuTexture.destroy();
+        this.createScreenSizedAssets();
+        this.rebuildComputeBindGroup();
+        this.bindGroup = this.device.createBindGroup({
+            layout: this.screenBindGroupLayout,
+            entries: [
+                { binding: 0, resource: this.sampler },
+                { binding: 1, resource: this.gpuTextureView },
+            ],
+        });
+    }
+
     render = async () => {
+        this.resizeScreenSizedAssets();
+        const screenWidth = this.canvas.width;
+        const screenHeight = this.canvas.height;
         const now = performance.now();
         this.frameCount++;
         if (now - this.lastTime >= 1000) {
@@ -450,7 +479,7 @@ export class Renderer {
             this.device.queue.submit([commandBuffer]);
 
             if (this.shouldCaptureMetrics()) {
-                await this.unmapToBuffer();
+                await this.unmapToBuffer(screenWidth, screenHeight);
             }
         }
 
@@ -484,7 +513,7 @@ export class Renderer {
         requestAnimationFrame(this.render);
     };
 
-    private async unmapToBuffer() {
+    private async unmapToBuffer(width: number, height: number) {
         await this.metricsResultBuffer.mapAsync(GPUMapMode.READ);
         const result = new Float32Array(
             this.metricsResultBuffer.getMappedRange().slice(),
@@ -492,8 +521,8 @@ export class Renderer {
         this.metricsResultBuffer.unmap();
 
         const snapshot = {
-            width: this.canvas.width,
-            height: this.canvas.height,
+            width,
+            height,
             sceneId: this.experimentState.sceneId,
             rbfConfig: this.experimentState.rbfConfig,
             rayMarchingConfig: this.experimentState.rayMarchingConfig,

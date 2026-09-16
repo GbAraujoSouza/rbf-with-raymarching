@@ -328,14 +328,14 @@ function selectPlySamplesGreedy(
 
         console.log(
             `[Greedy] points=${selectedPointIndices.length} ` +
-                `iteration=${((performance.now() - iterationStart) / 100).toFixed(1)}s ` +
+                `iteration=${((performance.now() - iterationStart) / 1000).toFixed(1)}s ` +
                 `heap=${getUsedHeapSize()}`,
         );
     }
 
     console.log(
         `[Greedy] completed points=${selectedPointIndices.length} ` +
-            `elapsed=${((performance.now() - profilingStart) / 100 / 60).toFixed(1)}min ` +
+            `elapsed=${((performance.now() - profilingStart) / 1000 / 60).toFixed(1)}min ` +
             `heap=${getUsedHeapSize()}`,
     );
 
