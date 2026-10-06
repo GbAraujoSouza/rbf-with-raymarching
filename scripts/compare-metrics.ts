@@ -18,6 +18,7 @@ interface Snapshot {
     rayMarchingConfig: Config;
     metricLayout: string[];
     metrics: number[];
+    frameGpuTimeMs?: number;
 }
 
 interface Stats {
@@ -30,6 +31,7 @@ interface Comparison {
     configChanges: string;
     config: Config;
     pixels: number;
+    frameGpuTimeMs: number | null;
     agreement: number;
     falsePositives: number;
     falseNegatives: number;
@@ -152,6 +154,7 @@ function compare(
         configChanges: getConfigChanges(baselineConfig, config),
         config,
         pixels: baseline.width * baseline.height,
+        frameGpuTimeMs: candidate.frameGpuTimeMs ?? null,
         agreement,
         falsePositives,
         falseNegatives,
@@ -173,6 +176,7 @@ function display(value: number | null, digits: number): string {
 function printReport(result: Comparison): void {
     console.log(`\nCandidate: ${result.candidate}`);
     console.log(`Config changes: ${result.configChanges}`);
+    console.log(`GPU frame time (ms): ${display(result.frameGpuTimeMs, 3)}`);
     console.log(
         `Hit agreement: ${result.agreement}/${result.pixels} (${percent(result.agreement, result.pixels).toFixed(2)}%)`,
     );
@@ -199,6 +203,7 @@ function printTable(results: Comparison[]): void {
         results.map((result, i) => ({
             Candidate: result.candidate,
             "Config changes": result.configChanges,
+            "GPU frame (ms)": display(result.frameGpuTimeMs, 3),
             "Hit agreement": `${percent(result.agreement, result.pixels).toFixed(2)}%`,
             FP: `${percent(result.falsePositives, result.pixels).toFixed(2)}%`,
             FN: `${percent(result.falseNegatives, result.pixels).toFixed(2)}%`,
@@ -230,6 +235,7 @@ function writeCsv(results: Comparison[]): void {
     const columns = [
         "candidate",
         "configChanges",
+        "frameGpuTimeMs",
         "hitAgreementCount",
         "hitAgreementPercent",
         "falsePositiveCount",
@@ -247,6 +253,7 @@ function writeCsv(results: Comparison[]): void {
     const rows = results.map((result) => [
         result.candidate,
         result.configChanges,
+        result.frameGpuTimeMs ?? "N/A",
         result.agreement,
         percent(result.agreement, result.pixels),
         result.falsePositives,

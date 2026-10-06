@@ -77,7 +77,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         lipschitzSafetyFactor: 1.2,
     },
     rbfConfig: {
-        surfaceSampleCount: 200,
+        surfaceSampleCount: 100,
         gaussianEpsilon: 1.35,
         sphereRadius: 1.5,
         debugPointRadius: 0.02,

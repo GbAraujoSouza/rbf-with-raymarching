@@ -21,6 +21,8 @@ import {
     LipschitzGridConfig,
 } from "./lipschitz-grid";
 
+const TIMESTAMP_BUFFER_SIZE = 2 * BigUint64Array.BYTES_PER_ELEMENT;
+
 export class Renderer {
     canvas: HTMLCanvasElement;
 
@@ -43,6 +45,9 @@ export class Renderer {
     lipschitzBuffer!: GPUBuffer;
     metricsWorkBuffer!: GPUBuffer;
     metricsResultBuffer!: GPUBuffer;
+    timestampQuerySet!: GPUQuerySet;
+    timestampResolveBuffer!: GPUBuffer;
+    timestampResultBuffer!: GPUBuffer;
 
     rbfFit!: RbfFitResult;
     lipschitzGrid?: LipschitzGrid;
@@ -114,6 +119,7 @@ export class Renderer {
 
     async initialize() {
         await this.setupDevice();
+        this.createTimestampAssets();
 
         this.meshRenderer = new MeshRenderer(this.device, this.format);
         this.meshRenderer.initialize();
@@ -164,7 +170,9 @@ export class Renderer {
             return;
         }
 
-        this.device = await this.adapter.requestDevice();
+        this.device = await this.adapter.requestDevice({
+            requiredFeatures: ["timestamp-query"],
+        });
 
         const context = this.canvas.getContext(
             "webgpu",
@@ -393,6 +401,21 @@ export class Renderer {
         this.gpuTextureView = this.gpuTexture.createView();
     }
 
+    private createTimestampAssets(): void {
+        this.timestampQuerySet = this.device.createQuerySet({
+            type: "timestamp",
+            count: 2,
+        });
+        this.timestampResolveBuffer = this.device.createBuffer({
+            size: TIMESTAMP_BUFFER_SIZE,
+            usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+        });
+        this.timestampResultBuffer = this.device.createBuffer({
+            size: TIMESTAMP_BUFFER_SIZE,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+    }
+
     private resizeScreenSizedAssets(): void {
         if (
             this.gpuTexture.width === this.canvas.width &&
@@ -438,8 +461,13 @@ export class Renderer {
         const encoder = this.device.createCommandEncoder();
 
         if (this.experimentState.renderBackend == RenderBackend.rayMarching) {
+            const captureMetrics = this.shouldCaptureMetrics();
             const computePass: GPUComputePassEncoder =
-                encoder.beginComputePass();
+                encoder.beginComputePass({
+                    timestampWrites: captureMetrics
+                        ? { querySet: this.timestampQuerySet, beginningOfPassWriteIndex: 0 }
+                        : undefined,
+                });
             computePass.setBindGroup(0, this.computeBindGroup);
             computePass.setPipeline(this.computePipeline);
             computePass.dispatchWorkgroups(
@@ -448,14 +476,6 @@ export class Renderer {
                 1,
             );
             computePass.end();
-
-            if (this.shouldCaptureMetrics()) {
-                encoder.copyBufferToBuffer(
-                    this.metricsWorkBuffer,
-                    this.metricsResultBuffer,
-                    this.metricsResultBuffer.size,
-                );
-            }
 
             // for every step start a render pass
             const pass = encoder.beginRenderPass({
@@ -467,6 +487,9 @@ export class Renderer {
                         storeOp: "store",
                     },
                 ],
+                timestampWrites: captureMetrics
+                    ? { querySet: this.timestampQuerySet, endOfPassWriteIndex: 1 }
+                    : undefined,
             });
 
             // draw stuff
@@ -475,10 +498,29 @@ export class Renderer {
             pass.draw(6, 1, 0, 0);
 
             pass.end();
+            if (captureMetrics) {
+                encoder.resolveQuerySet(
+                    this.timestampQuerySet,
+                    0,
+                    2,
+                    this.timestampResolveBuffer,
+                    0,
+                );
+                encoder.copyBufferToBuffer(
+                    this.timestampResolveBuffer,
+                    this.timestampResultBuffer,
+                    TIMESTAMP_BUFFER_SIZE,
+                );
+                encoder.copyBufferToBuffer(
+                    this.metricsWorkBuffer,
+                    this.metricsResultBuffer,
+                    this.metricsResultBuffer.size,
+                );
+            }
             const commandBuffer = encoder.finish();
             this.device.queue.submit([commandBuffer]);
 
-            if (this.shouldCaptureMetrics()) {
+            if (captureMetrics) {
                 await this.unmapToBuffer(screenWidth, screenHeight);
             }
         }
@@ -514,11 +556,19 @@ export class Renderer {
     };
 
     private async unmapToBuffer(width: number, height: number) {
-        await this.metricsResultBuffer.mapAsync(GPUMapMode.READ);
+        await Promise.all([
+            this.metricsResultBuffer.mapAsync(GPUMapMode.READ),
+            this.timestampResultBuffer.mapAsync(GPUMapMode.READ),
+        ]);
         const result = new Float32Array(
             this.metricsResultBuffer.getMappedRange().slice(),
         );
+        const timestamps = new BigUint64Array(
+            this.timestampResultBuffer.getMappedRange().slice(),
+        );
+        const frameGpuTimeMs = Number(timestamps[1] - timestamps[0]) / 1_000_000;
         this.metricsResultBuffer.unmap();
+        this.timestampResultBuffer.unmap();
 
         const snapshot = {
             width,
@@ -527,6 +577,7 @@ export class Renderer {
             rbfConfig: this.experimentState.rbfConfig,
             rayMarchingConfig: this.experimentState.rayMarchingConfig,
             metricLayout: ["distance", "stepCount", "hit"],
+            frameGpuTimeMs,
             metrics: Array.from(result),
         };
 
