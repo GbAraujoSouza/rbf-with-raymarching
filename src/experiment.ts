@@ -74,10 +74,10 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         correctionPower: 0.85,
         lipschitzGridResolution: 8,
         lipschitzSamplesPerAxis: 3,
-        lipschitzSafetyFactor: 1.2,
+        lipschitzSafetyFactor: 1.0,
     },
     rbfConfig: {
-        surfaceSampleCount: 100,
+        surfaceSampleCount: 600,
         gaussianEpsilon: 1.35,
         sphereRadius: 1.5,
         debugPointRadius: 0.02,

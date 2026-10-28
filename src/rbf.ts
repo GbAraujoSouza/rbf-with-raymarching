@@ -170,12 +170,7 @@ function createPlyObjectConstraintSamples(
     plyFile: string,
 ): RbfSample[] {
     const orientedPoints: PlyOrientedPoint[] =
-        PlyParser.extractPositionsAndNormals(plyFile, {
-            normalize: true,
-            targetSize: config.sphereRadius * 2,
-            maxPoints: Number.POSITIVE_INFINITY,
-            flipNormalsOutward: false,
-        });
+        PlyParser.extractPositionsAndNormals(plyFile, config.sphereRadius * 2);
 
     return selectPlySamplesGreedy(
         orientedPoints,

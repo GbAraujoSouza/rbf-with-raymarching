@@ -5,13 +5,6 @@ export interface PlyOrientedPoint {
     normal: Vec3;
 }
 
-export interface PlyParserOptions {
-    normalize?: boolean;
-    targetSize?: number;
-    maxPoints: number;
-    flipNormalsOutward?: boolean;
-}
-
 interface PlyHeader {
     vertexCount: number;
     faceCount: number;
@@ -22,27 +15,15 @@ interface PlyHeader {
 export class PlyParser {
     static extractPositionsAndNormals(
         plyFile: string,
-        options: PlyParserOptions,
+        targetSize: number,
     ): PlyOrientedPoint[] {
         const lines = plyFile.split("\n");
         const header = this.parseHeader(lines);
         const vertices = this.parseVertices(lines, header);
-        const normals = this.calculateVertexNormals(
-            lines,
-            header,
-            vertices,
-            options.flipNormalsOutward ?? true,
-        );
-        const normalizedVertices =
-            (options.normalize ?? true)
-                ? this.normalizeVertices(vertices, options.targetSize ?? 2.0)
-                : vertices;
-        const orientedPoints = this.createOrientedPoints(
-            normalizedVertices,
-            normals,
-        );
+        const normals = this.calculateVertexNormals(lines, header, vertices);
+        const normalizedVertices = this.normalizeVertices(vertices, targetSize);
 
-        return this.downsample(orientedPoints, options.maxPoints);
+        return this.createOrientedPoints(normalizedVertices, normals);
     }
 
     private static parseHeader(lines: string[]): PlyHeader {
@@ -136,34 +117,12 @@ export class PlyParser {
         lines: string[],
         header: PlyHeader,
         vertices: Vec3[],
-        flipNormalsOutward: boolean,
     ): Vec3[] {
         const normals = vertices.map(() => vec3.create(0, 0, 0));
         const firstFaceLine = header.headerEndLine + header.vertexCount + 1;
-        let signedVolume = 0;
-
-        if (header.faceCount > 0) {
-            signedVolume = this.accumulateFaceNormals(
-                lines,
-                header,
-                vertices,
-                normals,
-                firstFaceLine,
-            );
-        }
-
-        if (flipNormalsOutward && signedVolume < 0) {
-            for (const normal of normals) {
-                vec3.scale(normal, -1, normal);
-            }
-        }
+        this.accumulateFaceNormals(lines, header, vertices, normals, firstFaceLine);
 
         for (const normal of normals) {
-            // if (vec3.length(normal) === 0) {
-            //     normal[1] = 1;
-            // } else {
-            //     vec3.normalize(normal, normal);
-            // }
             if (vec3.length(normal) > 0.0) {
                 vec3.normalize(normal, normal);
             }
@@ -178,15 +137,13 @@ export class PlyParser {
         vertices: Vec3[],
         normals: Vec3[],
         firstFaceLine: number,
-    ): number {
-        let signedVolume = 0;
-
+    ): void {
         for (let faceIndex = 0; faceIndex < header.faceCount; faceIndex += 1) {
             const line = lines[firstFaceLine + faceIndex]?.trim();
 
             const indices: number[] = this.parseFaceIndices(line);
 
-            signedVolume += this.accumulateTriangleNormal(
+            this.accumulateTriangleNormal(
                 vertices,
                 normals,
                 indices[0],
@@ -194,8 +151,6 @@ export class PlyParser {
                 indices[2],
             );
         }
-
-        return signedVolume;
     }
 
     private static accumulateTriangleNormal(
@@ -204,7 +159,7 @@ export class PlyParser {
         aIndex: number,
         bIndex: number,
         cIndex: number,
-    ): number {
+    ): void {
         const a = vertices[aIndex];
         const b = vertices[bIndex];
         const c = vertices[cIndex];
@@ -216,8 +171,6 @@ export class PlyParser {
         vec3.add(normals[aIndex], faceNormal, normals[aIndex]);
         vec3.add(normals[bIndex], faceNormal, normals[bIndex]);
         vec3.add(normals[cIndex], faceNormal, normals[cIndex]);
-
-        return vec3.dot(a, vec3.cross(b, c)) / 6;
     }
 
     private static parseFaceIndices(line: string): number[] {
@@ -270,23 +223,5 @@ export class PlyParser {
         }
 
         return orientedPoints;
-    }
-
-    private static downsample(
-        points: PlyOrientedPoint[],
-        maxPoints: number,
-    ): PlyOrientedPoint[] {
-        if (points.length <= maxPoints) {
-            return points;
-        }
-
-        const result: PlyOrientedPoint[] = [];
-        const step = points.length / maxPoints;
-
-        for (let index = 0; index < maxPoints; index += 1) {
-            result.push(points[Math.floor(index * step)]);
-        }
-
-        return result;
     }
 }

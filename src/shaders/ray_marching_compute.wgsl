@@ -278,12 +278,9 @@ fn cellLocalLipschitzSteps(
     rayDirection: vec3f,
 ) -> CellLocalLipschitzSteps {
     let cell = lipschitzCellForPoint(point, rayDirection);
-    let directionScale = max(length(rayDirection), DIRECTION_EPSILON);
-    let surfaceStep =
-        distanceToSurface /
-        (localLipschitzBound(cell) * directionScale);
-    let cellExitStep = distanceToCellExit(point, rayDirection, cell);
-    return CellLocalLipschitzSteps(surfaceStep, cellExitStep);
+    let surfaceStep = distanceToSurface / localLipschitzBound(cell);
+    //let cellExitStep = distanceToCellExit(point, rayDirection, cell);
+    return CellLocalLipschitzSteps(surfaceStep, LARGE_DISTANCE);
 }
 
 
