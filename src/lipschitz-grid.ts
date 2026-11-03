@@ -23,6 +23,26 @@ export interface LipschitzGrid {
 
 const MINIMUM_LIPSCHITZ_BOUND = 1e-4;
 
+export function lookupLipschitzBound(point: Vec3, grid: LipschitzGrid): number {
+    const coordinate = (axis: number, dimension: number): number =>
+        Math.min(
+            dimension - 1,
+            Math.max(
+                0,
+                Math.floor((point[axis] - grid.boxMin[axis]) / grid.cellSize[axis]),
+            ),
+        );
+    // Internal boundaries belong to the higher cell; boxMax stays in the last.
+    const index = flattenGridIndex(
+        coordinate(0, grid.nx),
+        coordinate(1, grid.ny),
+        coordinate(2, grid.nz),
+        grid.nx,
+        grid.ny,
+    );
+    return Math.max(grid.values[index], MINIMUM_LIPSCHITZ_BOUND);
+}
+
 export function evaluateRbfGradient(
     point: Vec3,
     fit: RbfFitResult,

@@ -35,11 +35,12 @@ async function initializeApplication(): Promise<void> {
         renderer.experimentState.rayMarchingConfig,
     );
     renderer.onRbfFitChanged((fit, config) => {
-        distancePlot.scheduleAnalysis(fit, config);
+        distancePlot.scheduleAnalysis(fit, config, renderer.lipschitzGrid);
     });
     setupUI(renderer, () => {
         distancePlot.updateStepStrategy(
             renderer.experimentState.rayMarchingConfig,
+            renderer.lipschitzGrid,
         );
     });
 }

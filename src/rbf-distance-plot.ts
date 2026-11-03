@@ -5,6 +5,7 @@ import {
 } from "./rbf-distance-analysis";
 import { RbfFitConfig, RbfFitResult } from "./rbf";
 import { RayMarchingConfig, StepStrategy } from "./experiment";
+import { LipschitzGrid, lookupLipschitzBound } from "./lipschitz-grid";
 
 interface PlotPoint {
     x: number;
@@ -15,6 +16,7 @@ export class RbfDistancePlot {
     private readonly chart: Chart<"scatter" | "line", PlotPoint[]>;
     private calculationId = 0;
     private analysis?: RbfDistanceAnalysis;
+    private lipschitzGrid?: LipschitzGrid;
     private rayMarchingConfig: RayMarchingConfig;
 
     constructor(
@@ -64,7 +66,7 @@ export class RbfDistancePlot {
                         min: 0,
                         title: {
                             display: true,
-                            text: "|RBF|",
+                            text: "Step length",
                             color: "rgba(255, 255, 255, 0.8)",
                         },
                         ticks: {
@@ -94,9 +96,15 @@ export class RbfDistancePlot {
         });
     }
 
-    scheduleAnalysis(fit: RbfFitResult, config: RbfFitConfig): void {
+    scheduleAnalysis(
+        fit: RbfFitResult,
+        config: RbfFitConfig,
+        lipschitzGrid?: LipschitzGrid,
+    ): void {
         const calculationId = ++this.calculationId;
         const configSnapshot = { ...config };
+        this.analysis = undefined;
+        this.lipschitzGrid = lipschitzGrid;
         this.statusElement.textContent = "Calculating...";
 
         requestAnimationFrame(() => {
@@ -111,20 +119,38 @@ export class RbfDistancePlot {
                 }
 
                 this.analysis = analysis;
-                this.updateStatus(analysis);
                 this.updateChart(analysis);
             }, 0);
         });
     }
 
-    updateStepStrategy(config: RayMarchingConfig): void {
+    updateStepStrategy(
+        config: RayMarchingConfig,
+        lipschitzGrid?: LipschitzGrid,
+    ): void {
         this.rayMarchingConfig = { ...config };
+        this.lipschitzGrid = lipschitzGrid;
         if (this.analysis) {
             this.updateChart(this.analysis);
         }
     }
 
     private updateChart(analysis: RbfDistanceAnalysis): void {
+        if (
+            this.rayMarchingConfig.strategy ===
+                StepStrategy.cellLocalLipschitz &&
+            !this.lipschitzGrid
+        ) {
+            this.chart.data.datasets[0].label = this.stepDatasetLabel();
+            for (const dataset of this.chart.data.datasets) {
+                dataset.data = [];
+            }
+            this.statusElement.textContent = "Lipschitz grid unavailable";
+            this.chart.update("none");
+            return;
+        }
+
+        this.updateStatus(analysis);
         const points = analysis.samples.map((sample) => ({
             x: this.calculateStep(sample),
             y: sample.dist,
@@ -155,6 +181,16 @@ export class RbfDistancePlot {
         const rbf = sample.rbf;
         if (
             this.rayMarchingConfig.strategy ===
+                StepStrategy.cellLocalLipschitz &&
+            this.lipschitzGrid
+        ) {
+            return (
+                rbf / lookupLipschitzBound(sample.position, this.lipschitzGrid)
+            );
+        }
+
+        if (
+            this.rayMarchingConfig.strategy ===
             StepStrategy.exponentialCorrection
         ) {
             const correctedStep =
@@ -183,8 +219,9 @@ export class RbfDistancePlot {
             case StepStrategy.gradient:
                 return "Gradient step";
             case StepStrategy.cellLocalLipschitz:
-                return "Raw |RBF| (Lipschitz not modeled)";
+                return "Cell-local Lipschitz step";
         }
+        return "Not defined";
     }
 
     private updateStatus(analysis: RbfDistanceAnalysis): void {

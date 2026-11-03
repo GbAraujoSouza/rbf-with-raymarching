@@ -184,6 +184,7 @@ export function setupUI(
     if (btnApplyLipschitz) {
         btnApplyLipschitz.addEventListener("click", () => {
             renderer.rebuildLipschitzGrid();
+            onRayMarchingConfigChanged?.();
         });
     }
 

@@ -5,6 +5,7 @@ export enum StepStrategy {
     "exponentialCorrection" = 1,
     "gradient" = 2,
     "cellLocalLipschitz" = 3,
+    "stepTracing" = 4,
 }
 
 export enum RenderMode {
@@ -58,7 +59,7 @@ export interface ExperimentState {
 }
 
 export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
-    sceneId: "bunny",
+    sceneId: "dragon",
     renderMode: RenderMode.shaded,
     marchingCubesConfig: {
         resolution: 64,
@@ -77,11 +78,11 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         lipschitzSafetyFactor: 1.0,
     },
     rbfConfig: {
-        surfaceSampleCount: 600,
+        surfaceSampleCount: 300,
         gaussianEpsilon: 1.35,
         sphereRadius: 1.5,
         debugPointRadius: 0.02,
-        normalOffset: 0.1,
+        normalOffset: 0.03,
         regularization: 0.0,
         kernel: RbfKernel.thinPlate,
     },

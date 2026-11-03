@@ -170,6 +170,10 @@ fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
             let rawStep = distanceToSurface / max(length(gradient), 0.01);
             return rawStep;
         }
+        case 4u {
+            // step tracing
+            return 0.001;
+        }
         default {
             return distanceToSurface;
         }
