@@ -816,8 +816,6 @@ export class Renderer {
                 this.experimentState.rayMarchingConfig.lipschitzGridResolution,
             samplesPerAxis:
                 this.experimentState.rayMarchingConfig.lipschitzSamplesPerAxis,
-            safetyFactor:
-                this.experimentState.rayMarchingConfig.lipschitzSafetyFactor,
         };
         const start = performance.now();
         const grid = buildLipschitzGrid(

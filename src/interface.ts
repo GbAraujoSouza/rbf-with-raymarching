@@ -171,12 +171,6 @@ export function setupUI(
         "lipschitzSamplesPerAxis",
         true,
     );
-    bindSlider(
-        "rng-rm-lipschitz-safety",
-        "val-rm-lipschitz-safety",
-        experimentState.rayMarchingConfig,
-        "lipschitzSafetyFactor",
-    );
 
     const btnApplyLipschitz = document.getElementById(
         "btn-apply-lipschitz",

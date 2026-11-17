@@ -5,7 +5,6 @@ import { evaluateKernelDerivativeScale } from "./rbf-field";
 export interface LipschitzGridConfig {
     resolution: number;
     samplesPerAxis: number;
-    safetyFactor: number;
 }
 
 export interface LipschitzGrid {
@@ -84,7 +83,6 @@ export function buildLipschitzGrid(
         2,
         Math.floor(gridConfig.samplesPerAxis),
     );
-    const safetyFactor = Math.max(1, gridConfig.safetyFactor);
     const gradientSampleCount =
         resolution * resolution * resolution *
         samplesPerAxis * samplesPerAxis * samplesPerAxis;
@@ -126,7 +124,7 @@ export function buildLipschitzGrid(
                     }
                 }
                 const bound = Math.max(
-                    maximumGradient * safetyFactor,
+                    maximumGradient,
                     MINIMUM_LIPSCHITZ_BOUND,
                 );
                 const cellIndex = flattenGridIndex(

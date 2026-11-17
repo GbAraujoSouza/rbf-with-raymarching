@@ -22,7 +22,6 @@ export interface RayMarchingConfig {
     correctionPower: number;
     lipschitzGridResolution: number;
     lipschitzSamplesPerAxis: number;
-    lipschitzSafetyFactor: number;
 }
 
 export interface MarchingCubesConfig {
@@ -59,7 +58,7 @@ export interface ExperimentState {
 }
 
 export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
-    sceneId: "dragon",
+    sceneId: "bunny",
     renderMode: RenderMode.shaded,
     marchingCubesConfig: {
         resolution: 64,
@@ -75,10 +74,9 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         correctionPower: 0.85,
         lipschitzGridResolution: 8,
         lipschitzSamplesPerAxis: 3,
-        lipschitzSafetyFactor: 1.0,
     },
     rbfConfig: {
-        surfaceSampleCount: 300,
+        surfaceSampleCount: 1000,
         gaussianEpsilon: 1.35,
         sphereRadius: 1.5,
         debugPointRadius: 0.02,
