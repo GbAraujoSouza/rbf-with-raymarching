@@ -30,7 +30,7 @@ export class RbfDistancePlot {
             data: {
                 datasets: [
                     {
-                        label: "Samples",
+                        label: "Amostras",
                         data: [],
                         pointBackgroundColor: "rgba(255, 255, 255, 0.42)",
                         pointBorderWidth: 0,
@@ -38,7 +38,7 @@ export class RbfDistancePlot {
                     },
                     {
                         type: "line",
-                        label: "Ideal distance",
+                        label: "Distância Ideal",
                         data: [],
                         borderColor: "#fb7185",
                         borderWidth: 1.5,
@@ -66,7 +66,7 @@ export class RbfDistancePlot {
                         min: 0,
                         title: {
                             display: true,
-                            text: "Step length",
+                            text: "tamanho do passo",
                             color: "rgba(255, 255, 255, 0.8)",
                         },
                         ticks: {
@@ -81,7 +81,7 @@ export class RbfDistancePlot {
                         min: 0,
                         title: {
                             display: true,
-                            text: "Distance",
+                            text: "Distância",
                             color: "rgba(255, 255, 255, 0.8)",
                         },
                         ticks: {
@@ -207,21 +207,26 @@ export class RbfDistancePlot {
             return Math.max(rawStep, this.rayMarchingConfig.epsilon);
         }
 
+        if (this.rayMarchingConfig.strategy === StepStrategy.stepTracing) {
+            return Math.max(0.01, this.rayMarchingConfig.epsilon);
+        }
+
         return Math.max(rbf, this.rayMarchingConfig.epsilon);
     }
 
     private stepDatasetLabel(): string {
         switch (this.rayMarchingConfig.strategy) {
             case StepStrategy.naive:
-                return "Naive step";
+                return "Campo RBF";
             case StepStrategy.exponentialCorrection:
-                return "Exponential step";
+                return "Correçao por potência";
             case StepStrategy.gradient:
-                return "Gradient step";
+                return "Gradiente global";
             case StepStrategy.cellLocalLipschitz:
-                return "Cell-local Lipschitz step";
+                return "Grdiente local Lipschitz";
+            case StepStrategy.stepTracing:
+                return "Passo fixo";
         }
-        return "Not defined";
     }
 
     private updateStatus(analysis: RbfDistanceAnalysis): void {
@@ -231,8 +236,7 @@ export class RbfDistancePlot {
         }
 
         this.statusElement.textContent =
-            `${analysis.gridSampleCount.toLocaleString()} samples · ` +
-            // `${analysis.zeroCrossingCount.toLocaleString()} zeroes · ` +
+            `${analysis.gridSampleCount.toLocaleString()} amostras · ` +
             `${analysis.elapsedMilliseconds.toFixed(1)} ms`;
     }
 }
