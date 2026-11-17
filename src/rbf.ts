@@ -47,10 +47,10 @@ export function createBuiltInRbfFit(
             samples = createTorusConstraintSamples(config);
             break;
         case "dragon":
-            samples = createPlyObjectConstraintSamples(config, dragonPly);
+            samples = createPlyObjectConstraintSamples(config, dragonPly, sceneId);
             break;
         case "bunny":
-            samples = createPlyObjectConstraintSamples(config, bunnyPly);
+            samples = createPlyObjectConstraintSamples(config, bunnyPly, sceneId);
             break;
         case "sphere":
         default:
@@ -110,6 +110,7 @@ function createBoundingVolumeFromPoints(
 function createPlyObjectConstraintSamples(
     config: RbfFitConfig,
     plyFile: string,
+    sceneId: string,
 ): RbfSample[] {
     const orientedPoints: PlyOrientedPoint[] =
         PlyParser.extractPositionsAndNormals(plyFile, config.sphereRadius * 2);
@@ -118,6 +119,7 @@ function createPlyObjectConstraintSamples(
         orientedPoints,
         config.surfaceSampleCount,
         config,
+        sceneId,
     );
 }
 
@@ -155,11 +157,26 @@ function selectPlySamplesGreedy(
     allPoints: PlyOrientedPoint[],
     maxPoints: number,
     config: RbfFitConfig,
+    sceneId: string,
 ): RbfSample[] {
     const pointLimit = Math.min(Math.floor(maxPoints), allPoints.length);
     if (pointLimit <= 0 || pointLimit === allPoints.length) {
         return createPlyConstraintSamples(
             allPoints.slice(0, pointLimit),
+            config,
+        );
+    }
+
+    const cacheKey = `rbf-greedy:${sceneId}:${pointLimit}`;
+    const cachedIndices = readCachedPlySelection(
+        cacheKey,
+        pointLimit,
+        allPoints.length,
+    );
+    if (cachedIndices !== null) {
+        console.log(`[Greedy] cache hit model=${sceneId} points=${pointLimit}`);
+        return createPlyConstraintSamples(
+            cachedIndices.map((index) => allPoints[index]),
             config,
         );
     }
@@ -231,7 +248,46 @@ function selectPlySamplesGreedy(
             `heap=${getUsedHeapSize()}`,
     );
 
+    if (selectedPointIndices.length === pointLimit) {
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify(selectedPointIndices));
+        } catch {
+            // Storage is optional; keep the computed selection if saving fails.
+        }
+    }
+
     return selectedPointIndices.flatMap((index) => samplesByPoint[index]);
+}
+
+function readCachedPlySelection(
+    cacheKey: string,
+    pointLimit: number,
+    pointCount: number,
+): number[] | null {
+    try {
+        const stored = localStorage.getItem(cacheKey);
+        if (stored === null) {
+            return null;
+        }
+
+        const indices: unknown = JSON.parse(stored);
+        if (
+            !Array.isArray(indices) ||
+            indices.length !== pointLimit ||
+            !indices.every(
+                (index) =>
+                    Number.isInteger(index) && index >= 0 && index < pointCount,
+            ) ||
+            new Set(indices).size !== pointLimit
+        ) {
+            return null;
+        }
+
+        return indices;
+    } catch {
+        // Missing storage or invalid JSON falls back to greedy selection.
+        return null;
+    }
 }
 
 function getUsedHeapSize(): string {

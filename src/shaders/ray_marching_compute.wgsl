@@ -172,7 +172,7 @@ fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
         }
         case 4u {
             // step tracing
-            return 0.001;
+            return 0.01;
         }
         default {
             return distanceToSurface;
