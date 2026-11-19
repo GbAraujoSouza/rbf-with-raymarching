@@ -312,11 +312,14 @@ fn intersectAABB(rayOrigin: vec3f, rayDirection: vec3f, boxMin: vec3f, boxMax: v
 /*
     Ray march function
 */
-fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: bool) -> MarchingResult {
+fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, useDebugPoints: bool) -> MarchingResult {
     let maxDistance = sceneUniforms.maxDistance;
-    let epsilon = sceneUniforms.epsilon;
+    let epsilon = sceneUniforms.epsilon; // minimum step size, if less then, return
     let boxMin = sceneUniforms.boxMin.xyz;
     let boxMax = sceneUniforms.boxMax.xyz;
+
+    let strategyId = u32(sceneUniforms.stepStrategy);
+    let shouldUseLocalCells: bool = strategyId == STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ;
 
     let localRayOrigin: vec3f = (sceneUniforms.worldToObject * vec4(rayOrigin, 1.0)).xyz;
     let localRayDirection: vec3f = (sceneUniforms.worldToObject * vec4(rayDirection, 0.0)).xyz;
@@ -334,68 +337,40 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, usePoints: b
     var endDepth = min(hitBox.tMax, maxDistance);
     for (var step: u32 = 0; step < u32(sceneUniforms.maxSteps); step += 1) {
         let point = localRayOrigin + depth * localRayDirection;
-        let fieldValue = sceneSdf(point, usePoints);
+        let fieldValue = sceneSdf(point, useDebugPoints);
         let stepCount = step + 1u;
         let distanceToSurface = abs(fieldValue);
-        let strategyId = u32(sceneUniforms.stepStrategy);
-        var lipschitzSteps = CellLocalLipschitzSteps(
-            distanceToSurface,
-            LARGE_DISTANCE,
-        );
-        if (
-            strategyId == STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ &&
-            !usePoints
-        ) {
-            lipschitzSteps = cellLocalLipschitzSteps(
+
+        var hitSurface: bool = false;
+        var stepDistance: f32 = 0.0;
+
+        if (useDebugPoints) {
+            hitSurface = distanceToSurface <= epsilon;
+            stepDistance = max(distanceToSurface, epsilon);
+        } else if (shouldUseLocalCells) {
+            let lipschitzSteps = cellLocalLipschitzSteps(
                 distanceToSurface,
                 point,
                 localRayDirection,
             );
-        }
 
-        if (usePoints) {
-            if (distanceToSurface < epsilon) {
-                result.distance = depth;
-                result.stepCount = stepCount;
-                return result;
-            }
+            hitSurface = fieldValue < 0.0 || lipschitzSteps.surface <= epsilon;
+            stepDistance = min(lipschitzSteps.surface, lipschitzSteps.cellExit);
         } else {
-            if (fieldValue < 0.0) {
-                result.distance = depth;
-                result.stepCount = stepCount;
-                return result;
-            }
-            if (strategyId == STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ) {
-                if (lipschitzSteps.surface <= epsilon) {
-                    result.distance = depth;
-                    result.stepCount = stepCount;
-                    return result;
-                }
-            }
+            hitSurface = fieldValue < 0.0;
+            stepDistance = max(
+                calculateStep(distanceToSurface, point),
+                epsilon,
+            );
         }
 
-        var stepDistance = distanceToSurface;
-        if (!usePoints) {
-            if (strategyId == STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ) {
-                stepDistance = min(
-                    lipschitzSteps.surface,
-                    lipschitzSteps.cellExit,
-                );
-            } else {
-                // make the correction to the step
-                stepDistance = calculateStep(distanceToSurface, point);
-            }
-            
+        if (hitSurface) {
+            result.distance = depth;
+            result.stepCount = stepCount;
+            return result;
         }
 
-        if (
-            strategyId == STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ &&
-            !usePoints
-        ) {
-            depth += stepDistance;
-        } else {
-            depth += max(stepDistance, epsilon);
-        }
+        depth += stepDistance;
 
         if (depth >= endDepth) {
             result.distance = maxDistance;
@@ -563,7 +538,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
         ndc.x * aspect * tanHalfFovY * sceneUniforms.cameraRight.xyz +
         ndc.y * tanHalfFovY * sceneUniforms.cameraUp.xyz
     );
-    let showPoints = sceneUniforms.screenAndCounts.w > 0.5;
+    let showDebugPoints = sceneUniforms.screenAndCounts.w > 0.5;
 
     // Call "RayMarch" function
     let rbfResult: MarchingResult = shortestDistanceToSurface(rayOrigin, rayDirection, false);
@@ -586,7 +561,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
     var hitDistance = rbfDistance;
     var hitPoints = false;
 
-    if (showPoints) {
+    if (showDebugPoints) {
         let pointsResult = shortestDistanceToSurface(rayOrigin, rayDirection, true);
         let pointsDistance = pointsResult.distance;
         if (pointsDistance < hitDistance) {
