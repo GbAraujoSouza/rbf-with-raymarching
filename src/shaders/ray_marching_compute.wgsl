@@ -518,7 +518,7 @@ fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
     return lightIntensity * (ambient + diffuse + specular);
 }
 
-@compute @workgroup_size(16, 16, 1)
+@compute @workgroup_size(8, 8, 1)
 fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
 
     let screenSize: vec2i = vec2i(textureDimensions(screenTexture));
@@ -556,10 +556,13 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
         rbfResult.distance < sceneUniforms.maxDistance,
     );
 
-    let rbfDistance = rbfResult.distance;
-
-    var hitDistance = rbfDistance;
+    var hitDistance = rbfResult.distance;
     var hitPoints = false;
+
+    if (hitDistance >= sceneUniforms.maxDistance) {
+        textureStore(screenTexture, screenPos, vec4f(0.8118, 0.9333, 1.0, 1.0));
+        return;
+    }
 
     if (showDebugPoints) {
         let pointsResult = shortestDistanceToSurface(rayOrigin, rayDirection, true);
@@ -570,10 +573,9 @@ fn main(@builtin(global_invocation_id) GlobalInvocationId: vec3u) {
         }
     }
 
-    if (hitDistance >= sceneUniforms.maxDistance) {
-        textureStore(screenTexture, screenPos, vec4f(0.8118, 0.9333, 1.0, 1.0));
-        return;
-    }
+    // just the silluete
+    // textureStore(screenTexture, screenPos, vec4f(0.93, 0.32, 0.25, 1.0));
+    // return;
 
     let point = rayOrigin + rayDirection * hitDistance;
     let normal = estimateNormal(point, hitPoints, true, !hitPoints);

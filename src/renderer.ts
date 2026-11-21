@@ -2,6 +2,7 @@ import { mat4, Mat4, vec3, Vec3 } from "wgpu-matrix";
 import { createBuiltInRbfFit, RbfFitConfig, type RbfFitResult } from "./rbf";
 import screenShaderCode from "./shaders/screen_shader.wgsl";
 import computeShaderCode from "./shaders/ray_marching_compute.wgsl";
+import localCellShaderCode from "./shaders/local_lipschitz_grid.wgsl";
 import {
     DEFAULT_EXPERIMENT_STATE,
     ExperimentState,
@@ -9,9 +10,11 @@ import {
     StepStrategy,
 } from "./experiment";
 import {
-    SCENE_UNIFORM_BYTES,
     SceneUniforms,
     SceneUniformInput,
+    UniformInput,
+    LocalCellUniform,
+    LocalCellUniformInput,
 } from "./scene-uniforms";
 import { MeshCameraUniformInput, MeshRenderer } from "./mesh-renderer";
 import { buildMarchingCubesMesh, ExtractedMesh } from "./mesh";
@@ -39,7 +42,12 @@ export class Renderer {
     computeBindGroupLayout!: GPUBindGroupLayout;
     computePipeline!: GPUComputePipeline;
 
-    uniformBuffer!: GPUBuffer;
+    localCellUniformBuffer!: GPUBuffer;
+    localCellBindGroup!: GPUBindGroup;
+    localCellBindGroupLayout!: GPUBindGroupLayout;
+    localCellComputePipeline!: GPUComputePipeline;
+
+    sceneUniformBuffer!: GPUBuffer;
     positionsBuffer!: GPUBuffer;
     weightsBuffer!: GPUBuffer;
     lipschitzBuffer!: GPUBuffer;
@@ -62,6 +70,9 @@ export class Renderer {
     worldToObject!: Mat4;
 
     meshRenderer!: MeshRenderer;
+
+    sceneUniform!: UniformInput;
+    localCellUniform!: UniformInput;
 
     yaw: number = 0.7;
     pitch: number = 0.5;
@@ -107,9 +118,7 @@ export class Renderer {
     }
 
     captureMetrics(): void {
-        if (
-            this.experimentState.renderBackend !== RenderBackend.rayMarching
-        ) {
+        if (this.experimentState.renderBackend !== RenderBackend.rayMarching) {
             console.warn("Metrics capture is only available for Ray Marching.");
             return;
         }
@@ -117,19 +126,185 @@ export class Renderer {
         this.copyMetricsToBuffer = true;
     }
 
+    createRbfBuffers() {
+        this.positionsBuffer = this.device.createBuffer({
+            label: "Positions buffer",
+            size: this.rbfFit.positions.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        this.weightsBuffer = this.device.createBuffer({
+            label: "Weights buffer",
+            size: this.rbfFit.weights.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+
+        this.device.queue.writeBuffer(
+            this.positionsBuffer,
+            0,
+            this.rbfFit.positions,
+        );
+        this.device.queue.writeBuffer(
+            this.weightsBuffer,
+            0,
+            this.rbfFit.weights,
+        );
+    }
+
+    private createBindGrouplayouts() {
+        this.localCellBindGroupLayout = this.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "uniform" },
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "read-only-storage" },
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "read-only-storage" },
+                },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "storage" },
+                },
+            ],
+        });
+
+        this.computeBindGroupLayout = this.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    storageTexture: {
+                        access: "write-only",
+                        format: "rgba8unorm",
+                        viewDimension: "2d",
+                    },
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "uniform" },
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "read-only-storage" },
+                },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "read-only-storage" },
+                },
+                {
+                    binding: 4,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "read-only-storage" },
+                },
+                {
+                    binding: 5,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: { type: "storage" },
+                },
+            ],
+        });
+
+        this.screenBindGroupLayout = this.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    sampler: {},
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.FRAGMENT,
+                    texture: {},
+                },
+            ],
+        });
+    }
+
+    private createBindGroups() {
+        this.localCellBindGroup = this.device.createBindGroup({
+            layout: this.localCellBindGroupLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: { buffer: this.localCellUniformBuffer },
+                },
+                {
+                    binding: 1,
+                    resource: { buffer: this.positionsBuffer },
+                },
+                {
+                    binding: 2,
+                    resource: { buffer: this.weightsBuffer },
+                },
+                {
+                    binding: 3,
+                    resource: { buffer: this.lipschitzBuffer },
+                },
+            ],
+        });
+
+        this.rebuildComputeBindGroup();
+
+        this.bindGroup = this.device.createBindGroup({
+            layout: this.screenBindGroupLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: this.sampler,
+                },
+                {
+                    binding: 1,
+                    resource: this.gpuTextureView,
+                },
+            ],
+        });
+    }
+
     async initialize() {
         await this.setupDevice();
+
+        this.createTextures();
+        this.createAssets();
+
+        this.createUniformBuffers();
+
         this.createTimestampAssets();
+
+        this.createRbfBuffers();
+
+        //Not yet initialized buffer, so start with 1 value
+        this.createLipschitzBuffer();
+        this.updateLocalCellsUniform();
+
+        this.createSceneMetricsBuffers();
+
+        this.createBindGrouplayouts();
+
+        this.createBindGroups();
+
+        this.createPipelines();
+
+        this.createLocalCellsPipeline();
+
+        this.rebuildLipschitzGrid(false);
 
         this.meshRenderer = new MeshRenderer(this.device, this.format);
         this.meshRenderer.initialize();
 
-        this.createAssets();
-
         // same as createAssets for marching cubes
         this.rebuildMarchingCubesMesh();
 
-        await this.makePipeline();
         this.setupInteraction();
 
         const observer = new ResizeObserver((entries) => {
@@ -193,84 +368,43 @@ export class Renderer {
         });
     }
 
-    async makePipeline() {
-        this.uniformBuffer = this.device.createBuffer({
-            size: SCENE_UNIFORM_BYTES,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    createLocalCellsPipeline() {
+        const localCellComputePipelineLayout = this.device.createPipelineLayout(
+            {
+                bindGroupLayouts: [this.localCellBindGroupLayout],
+            },
+        );
+        const computeModule = this.device.createShaderModule({
+            code: localCellShaderCode,
         });
 
-        this.computeBindGroupLayout = this.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    storageTexture: {
-                        access: "write-only",
-                        format: "rgba8unorm",
-                        viewDimension: "2d",
-                    },
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "uniform" },
-                },
-                {
-                    binding: 2,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "read-only-storage" },
-                },
-                {
-                    binding: 3,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "read-only-storage" },
-                },
-                {
-                    binding: 4,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "read-only-storage" },
-                },
-                {
-                    binding: 5,
-                    visibility: GPUShaderStage.COMPUTE,
-                    buffer: { type: "storage" },
-                },
-            ],
+        this.localCellComputePipeline = this.device.createComputePipeline({
+            layout: localCellComputePipelineLayout,
+            compute: {
+                module: computeModule,
+                entryPoint: "main",
+            },
         });
+    }
 
-        this.rebuildComputeBindGroup();
+    createUniformBuffers(): void {
+        const usage = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
 
-        this.screenBindGroupLayout = this.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    sampler: {},
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.FRAGMENT,
-                    texture: {},
-                },
-            ],
+        this.sceneUniformBuffer = this.device.createBuffer({
+            label: "Scene uniform",
+            //size: this.sceneUniform.uniformBytes,
+            size: 64 * Float32Array.BYTES_PER_ELEMENT,
+            usage: usage,
         });
-
-        this.bindGroup = this.device.createBindGroup({
-            layout: this.screenBindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: this.sampler,
-                },
-                {
-                    binding: 1,
-                    resource: this.gpuTextureView,
-                },
-            ],
+        this.localCellUniformBuffer = this.device.createBuffer({
+            label: "local cell uniform",
+            // size: this.localCellUniform.uniformBytes,
+            size: 16 * Float32Array.BYTES_PER_ELEMENT,
+            usage: usage,
         });
+    }
 
-        // CREATE PIPELINES
-
+    private createPipelines() {
         const computePipelineLayout = this.device.createPipelineLayout({
             bindGroupLayouts: [this.computeBindGroupLayout],
         });
@@ -320,39 +454,6 @@ export class Renderer {
             this.experimentState.rbfConfig,
             this.experimentState.sceneId,
         );
-        this.positionsBuffer = this.device.createBuffer({
-            size: this.rbfFit.positions.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-        this.weightsBuffer = this.device.createBuffer({
-            size: this.rbfFit.weights.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-
-        this.createScreenSizedAssets();
-
-        // Not yet initialized buffer, so start with 1 value
-        this.lipschitzBuffer = this.createLipschitzBuffer(
-            new Float32Array([1]),
-        );
-
-        this.device.queue.writeBuffer(
-            this.positionsBuffer,
-            0,
-            this.rbfFit.positions,
-        );
-        this.device.queue.writeBuffer(
-            this.weightsBuffer,
-            0,
-            this.rbfFit.weights,
-        );
-
-        if (
-            this.experimentState.rayMarchingConfig.strategy ===
-            StepStrategy.cellLocalLipschitz
-        ) {
-            this.rebuildLipschitzGrid(false);
-        }
 
         const samplerDescriptor: GPUSamplerDescriptor = {
             addressModeU: "repeat",
@@ -366,7 +467,7 @@ export class Renderer {
         this.sampler = this.device.createSampler(samplerDescriptor);
     }
 
-    private createScreenSizedAssets(): void {
+    private createSceneMetricsBuffers() {
         const metricsBufferSize =
             this.canvas.width *
             this.canvas.height *
@@ -375,6 +476,7 @@ export class Renderer {
 
         // Three f32 values per pixel: traveled distance, step count, and hit.
         this.metricsWorkBuffer = this.device.createBuffer({
+            label: "metrics work buffer",
             size: metricsBufferSize,
             usage:
                 GPUBufferUsage.STORAGE |
@@ -383,10 +485,13 @@ export class Renderer {
         });
 
         this.metricsResultBuffer = this.device.createBuffer({
+            label: "metrics result buffer",
             size: metricsBufferSize,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
         });
+    }
 
+    private createTextures(): void {
         this.gpuTexture = this.device.createTexture({
             size: {
                 width: this.canvas.width,
@@ -407,10 +512,12 @@ export class Renderer {
             count: 2,
         });
         this.timestampResolveBuffer = this.device.createBuffer({
+            label: "Timestamp resolve buffer",
             size: TIMESTAMP_BUFFER_SIZE,
             usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
         });
         this.timestampResultBuffer = this.device.createBuffer({
+            label: "Timestamp result buffer",
             size: TIMESTAMP_BUFFER_SIZE,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
         });
@@ -427,7 +534,10 @@ export class Renderer {
         this.metricsWorkBuffer.destroy();
         this.metricsResultBuffer.destroy();
         this.gpuTexture.destroy();
-        this.createScreenSizedAssets();
+
+        this.createTextures();
+        this.createSceneMetricsBuffers();
+
         this.rebuildComputeBindGroup();
         this.bindGroup = this.device.createBindGroup({
             layout: this.screenBindGroupLayout,
@@ -457,22 +567,27 @@ export class Renderer {
         }
 
         this.updateSceneUniforms();
+        this.updateLocalCellsUniform();
 
         const encoder = this.device.createCommandEncoder();
 
         if (this.experimentState.renderBackend == RenderBackend.rayMarching) {
             const captureMetrics = this.shouldCaptureMetrics();
-            const computePass: GPUComputePassEncoder =
-                encoder.beginComputePass({
+            const computePass: GPUComputePassEncoder = encoder.beginComputePass(
+                {
                     timestampWrites: captureMetrics
-                        ? { querySet: this.timestampQuerySet, beginningOfPassWriteIndex: 0 }
+                        ? {
+                              querySet: this.timestampQuerySet,
+                              beginningOfPassWriteIndex: 0,
+                          }
                         : undefined,
-                });
+                },
+            );
             computePass.setBindGroup(0, this.computeBindGroup);
             computePass.setPipeline(this.computePipeline);
             computePass.dispatchWorkgroups(
-                Math.ceil(this.canvas.width / 16),
-                Math.ceil(this.canvas.height / 16),
+                Math.ceil(this.canvas.width / 8),
+                Math.ceil(this.canvas.height / 8),
                 1,
             );
             computePass.end();
@@ -488,7 +603,10 @@ export class Renderer {
                     },
                 ],
                 timestampWrites: captureMetrics
-                    ? { querySet: this.timestampQuerySet, endOfPassWriteIndex: 1 }
+                    ? {
+                          querySet: this.timestampQuerySet,
+                          endOfPassWriteIndex: 1,
+                      }
                     : undefined,
             });
 
@@ -566,7 +684,8 @@ export class Renderer {
         const timestamps = new BigUint64Array(
             this.timestampResultBuffer.getMappedRange().slice(),
         );
-        const frameGpuTimeMs = Number(timestamps[1] - timestamps[0]) / 1_000_000;
+        const frameGpuTimeMs =
+            Number(timestamps[1] - timestamps[0]) / 1_000_000;
         this.metricsResultBuffer.unmap();
         this.timestampResultBuffer.unmap();
 
@@ -697,10 +816,13 @@ export class Renderer {
                 : vec3.create(1, 1, 1),
         };
 
-        const uniformData: Float32Array<ArrayBuffer> =
-            SceneUniforms.createSceneUniformData(uniformInput);
+        this.sceneUniform = new SceneUniforms(uniformInput);
 
-        this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+        this.device.queue.writeBuffer(
+            this.sceneUniformBuffer,
+            0,
+            this.sceneUniform.data,
+        );
     }
 
     setupInteraction() {
@@ -753,10 +875,12 @@ export class Renderer {
         this.weightsBuffer.destroy();
 
         this.positionsBuffer = this.device.createBuffer({
+            label: "Positions buffer",
             size: this.rbfFit.positions.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
         this.weightsBuffer = this.device.createBuffer({
+            label: "Weights buffer",
             size: this.rbfFit.weights.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
@@ -810,6 +934,28 @@ export class Renderer {
         }
     }
 
+    updateLocalCellsUniform() {
+        const uniformInput: LocalCellUniformInput = {
+            boxMin: this.rbfFit.boxMin,
+            boxMax: this.rbfFit.boxMax,
+            resolution:
+                this.experimentState.rayMarchingConfig.lipschitzGridResolution,
+            samplesPerAxis:
+                this.experimentState.rayMarchingConfig.lipschitzSamplesPerAxis,
+            kernelType: this.experimentState.rbfConfig.kernel,
+            centerCount: this.rbfFit.samples.length,
+            gaussianEpsilon: this.experimentState.rbfConfig.gaussianEpsilon,
+        };
+
+        this.localCellUniform = new LocalCellUniform(uniformInput);
+
+        this.device.queue.writeBuffer(
+            this.localCellUniformBuffer,
+            0,
+            this.localCellUniform.data,
+        );
+    }
+
     rebuildLipschitzGrid(rebuildBindGroup: boolean = true): void {
         const config: LipschitzGridConfig = {
             resolution:
@@ -817,46 +963,68 @@ export class Renderer {
             samplesPerAxis:
                 this.experimentState.rayMarchingConfig.lipschitzSamplesPerAxis,
         };
-        const start = performance.now();
-        const grid = buildLipschitzGrid(
-            this.rbfFit,
-            this.experimentState.rbfConfig,
-            config,
-        );
-        const elapsed = performance.now() - start;
 
-        this.lipschitzGrid = grid;
-        this.lipschitzBuffer.destroy();
-        this.lipschitzBuffer = this.createLipschitzBuffer(grid.values);
-        if (rebuildBindGroup && this.computeBindGroupLayout) {
-            this.rebuildComputeBindGroup();
-        }
+        const encoder = this.device.createCommandEncoder();
+        const gridPass = encoder.beginComputePass();
 
-        console.log(
-            `Lipschitz grid ${grid.nx}x${grid.ny}x${grid.nz}: ` +
-                `${grid.gradientSampleCount} gradient samples, ` +
-                `bounds ${grid.minimumBound}..${grid.maximumBound}, ` +
-                `${elapsed} ms`,
+        gridPass.setBindGroup(0, this.localCellBindGroup);
+        gridPass.setPipeline(this.localCellComputePipeline);
+
+        const dispatchGroupsSize = config.resolution / 4;
+        gridPass.dispatchWorkgroups(
+            dispatchGroupsSize,
+            dispatchGroupsSize,
+            dispatchGroupsSize,
         );
+
+        gridPass.end();
+
+        this.device.queue.submit([encoder.finish()]);
+
+        // const start = performance.now();
+        // const grid = buildLipschitzGrid(
+        //     this.rbfFit,
+        //     this.experimentState.rbfConfig,
+        //     config,
+        // );
+        // const elapsed = performance.now() - start;
+
+        // this.lipschitzGrid = grid;
+        // this.lipschitzBuffer.destroy();
+        // this.lipschitzBuffer = this.createLipschitzBuffer(grid.values);
+        // if (rebuildBindGroup && this.computeBindGroupLayout) {
+        //     this.rebuildComputeBindGroup();
+        // }
+
+        // console.log(
+        //     `Lipschitz grid ${grid.nx}x${grid.ny}x${grid.nz}: ` +
+        //         `${grid.gradientSampleCount} gradient samples, ` +
+        //         `bounds ${grid.minimumBound}..${grid.maximumBound}, ` +
+        //         `${elapsed} ms`,
+        // );
     }
 
     private invalidateLipschitzGrid(): void {
         this.lipschitzGrid = undefined;
         this.lipschitzBuffer.destroy();
-        this.lipschitzBuffer = this.createLipschitzBuffer(
-            new Float32Array([1]),
-        );
+        this.createLipschitzBuffer();
     }
 
-    private createLipschitzBuffer(
-        values: Float32Array<ArrayBuffer>,
-    ): GPUBuffer {
-        const buffer = this.device.createBuffer({
+    private createLipschitzBuffer(values?: Float32Array<ArrayBuffer>): void {
+        if (!values) {
+            /*values parameter are optional since at initial buffers creation,
+            we do not know the size that will be used */
+            values = new Float32Array(
+                this.experimentState.rayMarchingConfig
+                    .lipschitzGridResolution ** 3,
+            );
+        }
+        this.lipschitzBuffer = this.device.createBuffer({
+            label: "Lipschitz buffer",
             size: values.byteLength,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
-        this.device.queue.writeBuffer(buffer, 0, values);
-        return buffer;
+        this.device.queue.writeBuffer(this.lipschitzBuffer, 0, values);
     }
 
     private rebuildComputeBindGroup(): void {
@@ -870,7 +1038,7 @@ export class Renderer {
                 },
                 {
                     binding: 1,
-                    resource: { buffer: this.uniformBuffer },
+                    resource: { buffer: this.sceneUniformBuffer },
                 },
                 {
                     binding: 2,

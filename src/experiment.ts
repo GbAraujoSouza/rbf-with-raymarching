@@ -61,7 +61,7 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
     sceneId: "bunny",
     renderMode: RenderMode.shaded,
     marchingCubesConfig: {
-        resolution: 64,
+        resolution: 16,
         isoValue: 0,
         extraPadding: 0,
     },

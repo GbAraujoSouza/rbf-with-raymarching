@@ -2,25 +2,6 @@ import { Mat4, Vec3 } from "wgpu-matrix";
 import { RbfKernel } from "./rbf";
 import { RenderMode, StepStrategy } from "./experiment";
 
-export const SCENE_UNIFORM_SLOTS = {
-    screenAndCounts: 0,
-    cameraPosition: 4,
-    cameraForward: 8,
-    cameraRight: 12,
-    cameraUp: 16,
-    marchParams: 20,
-    rbfParams: 24,
-    lightAndKernel: 28,
-    boxMin: 32,
-    boxMax: 36,
-    worldToObject: 40,
-    maxSteps: 56,
-    lipschitzGridDimensions: 60,
-};
-
-export const SCENE_UNIFORM_FLOATS = 64;
-export const SCENE_UNIFORM_BYTES = SCENE_UNIFORM_FLOATS * 4;
-
 export interface SceneUniformInput {
     screenWidth: number;
     screenHeight: number;
@@ -55,8 +36,26 @@ export interface SceneUniformInput {
     lipschitzGridDimensions: Vec3;
 }
 
-export class SceneUniforms {
-    public static setVec4(
+export interface LocalCellUniformInput {
+    boxMin: Vec3;
+    boxMax: Vec3;
+    resolution: number;
+    samplesPerAxis: number;
+    kernelType: number;
+    centerCount: number;
+    gaussianEpsilon: number;
+}
+
+export abstract class UniformInput {
+    declare data: Float32Array<ArrayBuffer>;
+    declare uniformFloats: number;
+    declare uniformBytes: number;
+
+    declare uniformSlots: Record<string, number>;
+
+    abstract createUniformData(input: any): Float32Array<ArrayBuffer>;
+
+    protected setVec4(
         data: Float32Array,
         offset: number,
         x: number,
@@ -70,7 +69,7 @@ export class SceneUniforms {
         data[offset + 3] = w;
     }
 
-    public static setVec3WithPadding(
+    protected setVec3WithPadding(
         data: Float32Array,
         offset: number,
         x: number,
@@ -82,16 +81,106 @@ export class SceneUniforms {
         data[offset + 2] = z;
         data[offset + 3] = 0.0;
     }
+}
 
-    public static createSceneUniformData(
+export class LocalCellUniform extends UniformInput {
+    declare data: Float32Array<ArrayBuffer>;
+
+    override uniformFloats = 16;
+    override uniformBytes = this.uniformFloats * 4;
+
+    override uniformSlots = {
+        boxMin: 0,
+        boxMax: 4,
+        resolution: 8,
+        samplesPerAxis: 9,
+        kernelType: 10,
+        centerCount: 11,
+        gaussianEpsilon: 12,
+    };
+
+    constructor(input: LocalCellUniformInput) {
+        super();
+        this.data = this.createUniformData(input);
+    }
+
+    createUniformData(input: LocalCellUniformInput): Float32Array<ArrayBuffer> {
+        const uniformData = new Float32Array(this.uniformFloats);
+
+        this.setVec3WithPadding(
+            uniformData,
+            this.uniformSlots.boxMin,
+            input.boxMin[0],
+            input.boxMin[1],
+            input.boxMin[2],
+        );
+
+        this.setVec3WithPadding(
+            uniformData,
+            this.uniformSlots.boxMax,
+            input.boxMax[0],
+            input.boxMax[1],
+            input.boxMax[2],
+        );
+
+        this.setVec4(
+            uniformData,
+            this.uniformSlots.centerCount,
+            input.resolution,
+            input.samplesPerAxis,
+            input.kernelType,
+            input.centerCount,
+        );
+
+        this.setVec4(
+            uniformData,
+            this.uniformSlots.gaussianEpsilon,
+            input.gaussianEpsilon,
+            0.0,
+            0.0,
+            0.0,
+        );
+
+        return uniformData;
+    }
+}
+
+export class SceneUniforms extends UniformInput {
+    declare data: Float32Array<ArrayBuffer>;
+
+    override uniformFloats = 64;
+    override uniformBytes = this.uniformFloats * 4;
+
+    override uniformSlots = {
+        screenAndCounts: 0,
+        cameraPosition: 4,
+        cameraForward: 8,
+        cameraRight: 12,
+        cameraUp: 16,
+        marchParams: 20,
+        rbfParams: 24,
+        lightAndKernel: 28,
+        boxMin: 32,
+        boxMax: 36,
+        worldToObject: 40,
+        maxSteps: 56,
+        lipschitzGridDimensions: 60,
+    };
+
+    constructor(input: SceneUniformInput) {
+        super();
+        this.data = this.createUniformData(input);
+    }
+
+    override createUniformData(
         input: SceneUniformInput,
     ): Float32Array<ArrayBuffer> {
-        const uniformData = new Float32Array(SCENE_UNIFORM_FLOATS);
+        const uniformData = new Float32Array(this.uniformFloats);
 
         // scene and counts
-        SceneUniforms.setVec4(
+        this.setVec4(
             uniformData,
-            SCENE_UNIFORM_SLOTS.screenAndCounts,
+            this.uniformSlots.screenAndCounts,
             input.screenWidth,
             input.screenHeight,
             input.sampleCount,
@@ -99,39 +188,39 @@ export class SceneUniforms {
         );
 
         // camera vectors
-        SceneUniforms.setVec3WithPadding(
+        this.setVec3WithPadding(
             uniformData,
-            SCENE_UNIFORM_SLOTS.cameraPosition,
+            this.uniformSlots.cameraPosition,
             input.cameraPosition[0],
             input.cameraPosition[1],
             input.cameraPosition[2],
         );
-        SceneUniforms.setVec3WithPadding(
+        this.setVec3WithPadding(
             uniformData,
-            SCENE_UNIFORM_SLOTS.cameraForward,
+            this.uniformSlots.cameraForward,
             input.cameraForward[0],
             input.cameraForward[1],
             input.cameraForward[2],
         );
-        SceneUniforms.setVec3WithPadding(
+        this.setVec3WithPadding(
             uniformData,
-            SCENE_UNIFORM_SLOTS.cameraRight,
+            this.uniformSlots.cameraRight,
             input.cameraRight[0],
             input.cameraRight[1],
             input.cameraRight[2],
         );
-        SceneUniforms.setVec3WithPadding(
+        this.setVec3WithPadding(
             uniformData,
-            SCENE_UNIFORM_SLOTS.cameraUp,
+            this.uniformSlots.cameraUp,
             input.cameraUp[0],
             input.cameraUp[1],
             input.cameraUp[2],
         );
 
         // march params
-        SceneUniforms.setVec4(
+        this.setVec4(
             uniformData,
-            SCENE_UNIFORM_SLOTS.marchParams,
+            this.uniformSlots.marchParams,
             input.gaussianKernelCorrectionPower,
             input.gaussianKernelCorrectionLinear,
             input.maxDistance,
@@ -139,9 +228,9 @@ export class SceneUniforms {
         );
 
         // rbf params
-        SceneUniforms.setVec4(
+        this.setVec4(
             uniformData,
-            SCENE_UNIFORM_SLOTS.rbfParams,
+            this.uniformSlots.rbfParams,
             input.gaussianEpsilon,
             input.debugPointRadius,
             input.stepStrategy,
@@ -149,9 +238,9 @@ export class SceneUniforms {
         );
 
         // light position
-        SceneUniforms.setVec4(
+        this.setVec4(
             uniformData,
-            SCENE_UNIFORM_SLOTS.lightAndKernel,
+            this.uniformSlots.lightAndKernel,
             input.lightPosition[0],
             input.lightPosition[1],
             input.lightPosition[2],
@@ -159,34 +248,34 @@ export class SceneUniforms {
         );
 
         // bounding box points
-        SceneUniforms.setVec3WithPadding(
+        this.setVec3WithPadding(
             uniformData,
-            SCENE_UNIFORM_SLOTS.boxMin,
+            this.uniformSlots.boxMin,
             input.boxMin[0],
             input.boxMin[1],
             input.boxMin[2],
         );
-        SceneUniforms.setVec3WithPadding(
+        this.setVec3WithPadding(
             uniformData,
-            SCENE_UNIFORM_SLOTS.boxMax,
+            this.uniformSlots.boxMax,
             input.boxMax[0],
             input.boxMax[1],
             input.boxMax[2],
         );
 
-        uniformData.set(input.worldToObject, SCENE_UNIFORM_SLOTS.worldToObject);
+        uniformData.set(input.worldToObject, this.uniformSlots.worldToObject);
 
-        SceneUniforms.setVec4(
+        this.setVec4(
             uniformData,
-            SCENE_UNIFORM_SLOTS.maxSteps,
+            this.uniformSlots.maxSteps,
             input.maxSteps,
             input.fieldOfView,
             0.0,
-            0.0
+            0.0,
         );
-        SceneUniforms.setVec4(
+        this.setVec4(
             uniformData,
-            SCENE_UNIFORM_SLOTS.lipschitzGridDimensions,
+            this.uniformSlots.lipschitzGridDimensions,
             input.lipschitzGridDimensions[0],
             input.lipschitzGridDimensions[1],
             input.lipschitzGridDimensions[2],
