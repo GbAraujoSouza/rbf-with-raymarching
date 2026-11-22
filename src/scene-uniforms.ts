@@ -125,7 +125,7 @@ export class LocalCellUniform extends UniformInput {
 
         this.setVec4(
             uniformData,
-            this.uniformSlots.centerCount,
+            this.uniformSlots.resolution,
             input.resolution,
             input.samplesPerAxis,
             input.kernelType,

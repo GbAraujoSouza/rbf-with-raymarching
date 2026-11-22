@@ -33,6 +33,10 @@ fn main(@builtin(global_invocation_id) cell: vec3u) {
     let boxMax = gridUniforms.boxMax.xyz;
     let cellSize = (boxMax - boxMin) / f32(resolution);
 
+    if any(cell >= vec3u(resolution)) {
+        return;
+    }
+
     var maxGradient = 0.0;
     for (var sampleZ = 0u; sampleZ < samplesPerAxis; sampleZ += 1) {
         for (var sampleY = 0u; sampleY < samplesPerAxis; sampleY += 1) {
@@ -54,7 +58,7 @@ fn main(@builtin(global_invocation_id) cell: vec3u) {
                     cell.y * resolution +
                     cell.z * resolution * resolution;
 
-    values[cellIndex] = maxGradient;
+    values[cellIndex] = max(maxGradient, 1e-4);
 }
 
 fn rbfGradient(point: vec3f) -> vec3f {

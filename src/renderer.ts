@@ -297,7 +297,7 @@ export class Renderer {
 
         this.createLocalCellsPipeline();
 
-        this.rebuildLipschitzGrid(false);
+        this.rebuildLipschitzGrid();
 
         this.meshRenderer = new MeshRenderer(this.device, this.format);
         this.meshRenderer.initialize();
@@ -807,13 +807,11 @@ export class Renderer {
 
             maxSteps: this.experimentState.rayMarchingConfig.maxSteps,
             fieldOfView: this.fieldOfView,
-            lipschitzGridDimensions: this.lipschitzGrid
-                ? vec3.create(
-                      this.lipschitzGrid.nx,
-                      this.lipschitzGrid.ny,
-                      this.lipschitzGrid.nz,
-                  )
-                : vec3.create(1, 1, 1),
+            lipschitzGridDimensions: vec3.create(
+                this.experimentState.rayMarchingConfig.lipschitzGridResolution,
+                this.experimentState.rayMarchingConfig.lipschitzGridResolution,
+                this.experimentState.rayMarchingConfig.lipschitzGridResolution,
+            ),
         };
 
         this.sceneUniform = new SceneUniforms(uniformInput);
@@ -901,7 +899,7 @@ export class Renderer {
             this.experimentState.rayMarchingConfig.strategy ===
             StepStrategy.cellLocalLipschitz
         ) {
-            this.rebuildLipschitzGrid(false);
+            this.rebuildLipschitzGrid();
         }
         this.rebuildComputeBindGroup();
         if (
@@ -956,7 +954,7 @@ export class Renderer {
         );
     }
 
-    rebuildLipschitzGrid(rebuildBindGroup: boolean = true): void {
+    rebuildLipschitzGrid(): void {
         const config: LipschitzGridConfig = {
             resolution:
                 this.experimentState.rayMarchingConfig.lipschitzGridResolution,
@@ -964,13 +962,20 @@ export class Renderer {
                 this.experimentState.rayMarchingConfig.lipschitzSamplesPerAxis,
         };
 
+        this.lipschitzBuffer.destroy();
+        this.createLipschitzBuffer();
+
+        this.createBindGroups();
+
+        this.updateLocalCellsUniform();
+
         const encoder = this.device.createCommandEncoder();
         const gridPass = encoder.beginComputePass();
 
         gridPass.setBindGroup(0, this.localCellBindGroup);
         gridPass.setPipeline(this.localCellComputePipeline);
 
-        const dispatchGroupsSize = config.resolution / 4;
+        const dispatchGroupsSize = Math.ceil(config.resolution / 4);
         gridPass.dispatchWorkgroups(
             dispatchGroupsSize,
             dispatchGroupsSize,
