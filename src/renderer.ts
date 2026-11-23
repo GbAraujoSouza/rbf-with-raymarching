@@ -1,7 +1,7 @@
 import { mat4, Mat4, vec3, Vec3 } from "wgpu-matrix";
 import { createBuiltInRbfFit, RbfFitConfig, type RbfFitResult } from "./rbf";
 import screenShaderCode from "./shaders/screen_shader.wgsl";
-import computeShaderCode from "./shaders/ray_marching_compute.wgsl";
+import computeShaderCode from "./shaders/ray_marching_computer_per_ray.wgsl";
 import localCellShaderCode from "./shaders/local_lipschitz_grid.wgsl";
 import {
     DEFAULT_EXPERIMENT_STATE,
@@ -586,8 +586,8 @@ export class Renderer {
             computePass.setBindGroup(0, this.computeBindGroup);
             computePass.setPipeline(this.computePipeline);
             computePass.dispatchWorkgroups(
-                Math.ceil(this.canvas.width / 8),
-                Math.ceil(this.canvas.height / 8),
+                this.canvas.width,
+                this.canvas.height,
                 1,
             );
             computePass.end();
