@@ -100,17 +100,70 @@ fn kernel(point: vec3f, center: vec3f) -> f32 {
         }
         case 4u {
             // thin plate
-            let radius = length(point - center);
-            if (radius == 0.0) {
+            // equation r^2 * ln(r) = |d|^2 * 0.5 * ln(d)
+            // where d is the offset. working with dot() operator is less expensive
+            let d: vec3f = point - center;
+            let q: f32 = dot(d, d);
+            if (q == 0.0) {
                 return 0.0;
             }
-            return radius * radius * log(radius);
+            return q * 0.5 * log(q);
         }
         default {
             // default to lenear
             return length(point - center);
         }
     }
+}
+
+fn rbfGradient(point: vec3f) -> vec3f {
+    let sampleCount = i32(sceneUniforms.screenAndCounts.z);
+    var gradient = vec3f(0.0, 0.0, 0.0);
+
+    for (var index = 0; index < sampleCount; index += 1) {
+        let center = samplePositions.values[index].xyz;
+        let offset = point - center;
+        //let radius = length(offset);
+        let radius = 1.0;
+        var derivativeScale = 0.0;
+
+        switch(u32(sceneUniforms.kernelType)) {
+            case 0u {
+                if (radius > 0.0) {
+                    derivativeScale = 1.0 / radius;
+                }
+            }
+            case 1u {
+                let epsilon = sceneUniforms.gaussianEpsilon;
+                let epsilonSquared = epsilon * epsilon;
+                derivativeScale =
+                    -2.0 *
+                    epsilonSquared *
+                    exp(-epsilonSquared * radius * radius);
+            }
+            case 2u {
+                derivativeScale = 3.0 * radius;
+            }
+            case 3u {
+                derivativeScale = 5.0 * radius * radius * radius;
+            }
+            case 4u {
+                if (radius > 0.0) {
+                    let q = dot(offset, offset);
+                    derivativeScale = (log(q) + 1);
+                }
+            }
+            default {
+                if (radius > 0.0) {
+                    derivativeScale = 1.0 / radius;
+                }
+            }
+        }
+
+        gradient += sampleWeights.values[index] * derivativeScale * offset;
+    }
+
+    return gradient;
 }
 
 fn rbfField(point: vec3f) -> f32 {
@@ -382,54 +435,6 @@ fn shortestDistanceToSurface(rayOrigin: vec3f, rayDirection: vec3f, useDebugPoin
     result.distance = maxDistance;
     result.stepCount = u32(sceneUniforms.maxSteps);
     return result;
-}
-
-fn rbfGradient(point: vec3f) -> vec3f {
-    let sampleCount = i32(sceneUniforms.screenAndCounts.z);
-    var gradient = vec3f(0.0, 0.0, 0.0);
-
-    for (var index = 0; index < sampleCount; index += 1) {
-        let center = samplePositions.values[index].xyz;
-        let offset = point - center;
-        let radius = length(offset);
-        var derivativeScale = 0.0;
-
-        switch(u32(sceneUniforms.kernelType)) {
-            case 0u {
-                if (radius > 0.0) {
-                    derivativeScale = 1.0 / radius;
-                }
-            }
-            case 1u {
-                let epsilon = sceneUniforms.gaussianEpsilon;
-                let epsilonSquared = epsilon * epsilon;
-                derivativeScale =
-                    -2.0 *
-                    epsilonSquared *
-                    exp(-epsilonSquared * radius * radius);
-            }
-            case 2u {
-                derivativeScale = 3.0 * radius;
-            }
-            case 3u {
-                derivativeScale = 5.0 * radius * radius * radius;
-            }
-            case 4u {
-                if (radius > 0.0) {
-                    derivativeScale = 2.0 * log(radius) + 1.0;
-                }
-            }
-            default {
-                if (radius > 0.0) {
-                    derivativeScale = 1.0 / radius;
-                }
-            }
-        }
-
-        gradient += sampleWeights.values[index] * derivativeScale * offset;
-    }
-
-    return gradient;
 }
 
 fn estimateNormal(
