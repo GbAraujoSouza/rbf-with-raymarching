@@ -842,7 +842,7 @@ export class Renderer {
 
             this.yaw -= deltaX * rotationSpeed;
             this.pitch = clamp(
-                this.pitch - deltaY * rotationSpeed,
+                this.pitch + deltaY * rotationSpeed,
                 -1.45,
                 1.45,
             );

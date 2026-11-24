@@ -493,7 +493,7 @@ fn phong(baseColor: vec3f, point: vec3f, normal: vec3f) -> vec3f {
     let ambient = 0.2 * baseColor;
     let diffuseColor = 0.6 * baseColor;
     let specularColor = vec3f(0.45, 0.45, 0.45);
-    let shininess = 8.0;
+    let shininess = 5.0;
 
     let viewDirection = normalize(eye - point);
 
