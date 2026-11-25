@@ -6,8 +6,8 @@ struct SceneUniforms {
     cameraUp: vec4f,
     
     // RAY MARCHING PARAMS
-    gaussianKernelCorrectionPower: f32,
-    gaussianKernelCorrectionLinear: f32,
+    correctionPower: f32,
+    correctionLinear: f32,
     maxDistance: f32,
     /*
         This epsilon is used for 2 things:
@@ -72,7 +72,7 @@ const RAY_LANES: u32 = 32u;
 const RAY_MARCHING: u32 = 0u;
 const RAY_HIT: u32 = 1u;
 const RAY_MISS: u32 = 2u;
-const STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ: u32 = 3u;
+const STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ: u32 = 2u;
 const MINIMUM_LIPSCHITZ_BOUND: f32 = 1e-4;
 const DIRECTION_EPSILON: f32 = 1e-8;
 const LARGE_DISTANCE: f32 = 1e30;
@@ -208,32 +208,32 @@ fn rbfField(point: vec3f, lane: u32) -> f32 {
     return workgroupUniformLoad(&partialSums[0]);
 }
 
+fn adjustedStep(baseStep: f32) -> f32 {
+    let epsilon = sceneUniforms.epsilon;
+    let linear = sceneUniforms.correctionLinear;
+    let power = sceneUniforms.correctionPower;
+    let flooredBase = max(baseStep, epsilon);
+    if (linear == 1.0 && power == 1.0) {
+        return flooredBase;
+    }
+    return max(linear * pow(flooredBase, power), epsilon);
+}
+
 fn calculateStep(distanceToSurface: f32, point: vec3f) -> f32 {
-    var strategyId: u32 = u32(sceneUniforms.stepStrategy);
-    switch(strategyId) {
-        case 0u {
-            // naive
-            return distanceToSurface;
-        }
+    let strategyId = u32(sceneUniforms.stepStrategy);
+    switch strategyId {
         case 1u {
-            // exponential correction
-            let epsilon = sceneUniforms.epsilon;
-            let correctionPower = sceneUniforms.gaussianKernelCorrectionPower;
-            let correctionLinear = sceneUniforms.gaussianKernelCorrectionLinear;
-            return correctionLinear * pow(max(distanceToSurface, epsilon), correctionPower);
-        }
-        case 2u {
-            // gradient
+            // Gradient
             let gradient = rbfGradient(point);
-            let rawStep = distanceToSurface / max(length(gradient), 0.01);
-            return rawStep;
+            return adjustedStep(distanceToSurface / max(length(gradient), 0.01));
         }
-        case 4u {
-            // step tracing
+        case 3u {
+            // Step Tracing
             return 0.01;
         }
         default {
-            return distanceToSurface;
+            // Naive
+            return adjustedStep(distanceToSurface);
         }
     }
 }
@@ -377,9 +377,12 @@ fn shortestDistanceToSurface(
                 );
 
                 hitSurface = hitSurface || lipschitzSteps.surface <= epsilon;
-                nextDepth = min(state.depth + lipschitzSteps.surface, lipschitzSteps.cellExitDepth);
+                nextDepth = min(
+                    state.depth + adjustedStep(lipschitzSteps.surface),
+                    lipschitzSteps.cellExitDepth,
+                );
             } else {
-                nextDepth = state.depth + max(calculateStep(distanceToSurface, point), epsilon);
+                nextDepth = state.depth + calculateStep(distanceToSurface, point);
             }
 
             sharedRayState.stepCount += 1u;

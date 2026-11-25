@@ -178,52 +178,43 @@ export class RbfDistancePlot {
     private calculateStep(
         sample: RbfDistanceAnalysis["samples"][number],
     ): number {
-        const rbf = sample.rbf;
-        if (
-            this.rayMarchingConfig.strategy ===
-                StepStrategy.cellLocalLipschitz &&
-            this.lipschitzGrid
-        ) {
-            return (
-                rbf / lookupLipschitzBound(sample.position, this.lipschitzGrid)
-            );
+        const { strategy, correctionLinear, correctionPower, epsilon } =
+            this.rayMarchingConfig;
+        let baseStep = sample.rbf;
+        switch (strategy) {
+            case StepStrategy.gradient:
+                baseStep /= Math.max(sample.gradientMagnitude, 0.01);
+                break;
+            case StepStrategy.cellLocalLipschitz:
+                if (this.lipschitzGrid) {
+                    baseStep /= lookupLipschitzBound(
+                        sample.position,
+                        this.lipschitzGrid,
+                    );
+                }
+                break;
+            case StepStrategy.stepTracing:
+                return 0.01;
         }
 
-        if (
-            this.rayMarchingConfig.strategy ===
-            StepStrategy.exponentialCorrection
-        ) {
-            const correctedStep =
-                this.rayMarchingConfig.correctionLinear *
-                Math.pow(
-                    Math.max(rbf, this.rayMarchingConfig.epsilon),
-                    this.rayMarchingConfig.correctionPower,
-                );
-            return Math.max(correctedStep, this.rayMarchingConfig.epsilon);
+        const flooredBase = Math.max(baseStep, epsilon);
+        if (correctionLinear === 1 && correctionPower === 1) {
+            return flooredBase;
         }
-
-        if (this.rayMarchingConfig.strategy === StepStrategy.gradient) {
-            const rawStep = rbf / Math.max(sample.gradientMagnitude, 0.01);
-            return Math.max(rawStep, this.rayMarchingConfig.epsilon);
-        }
-
-        if (this.rayMarchingConfig.strategy === StepStrategy.stepTracing) {
-            return Math.max(0.01, this.rayMarchingConfig.epsilon);
-        }
-
-        return Math.max(rbf, this.rayMarchingConfig.epsilon);
+        return Math.max(
+            correctionLinear * Math.pow(flooredBase, correctionPower),
+            epsilon,
+        );
     }
 
     private stepDatasetLabel(): string {
         switch (this.rayMarchingConfig.strategy) {
             case StepStrategy.naive:
                 return "Campo RBF";
-            case StepStrategy.exponentialCorrection:
-                return "Correçao por potência";
             case StepStrategy.gradient:
                 return "Gradiente global";
             case StepStrategy.cellLocalLipschitz:
-                return "Grdiente local Lipschitz";
+                return "Lipschitz local";
             case StepStrategy.stepTracing:
                 return "Passo fixo";
         }

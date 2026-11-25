@@ -48,6 +48,18 @@ export function setupUI(
         });
     }
 
+    const correctionSliders = [
+        document.querySelector<HTMLInputElement>("#rng-rm-corlinear"),
+        document.querySelector<HTMLInputElement>("#rng-rm-corpower"),
+    ];
+    function updateCorrectionControls(): void {
+        const fixedStep =
+            experimentState.rayMarchingConfig.strategy === StepStrategy.stepTracing;
+        for (const slider of correctionSliders) {
+            if (slider) slider.disabled = fixedStep;
+        }
+    }
+
     // Ray Marching Strategy
     const selStrategy = document.getElementById(
         "sel-strategy",
@@ -61,6 +73,7 @@ export function setupUI(
                     (e.target as HTMLSelectElement)
                         .value as keyof typeof StepStrategy
                 ];
+            updateCorrectionControls();
             if (
                 experimentState.rayMarchingConfig.strategy ===
                 StepStrategy.cellLocalLipschitz
@@ -70,6 +83,7 @@ export function setupUI(
             onRayMarchingConfigChanged?.();
         });
     }
+    updateCorrectionControls();
 
     const selKernel = document.getElementById(
         "sel-kernel",

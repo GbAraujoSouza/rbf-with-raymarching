@@ -785,9 +785,9 @@ export class Renderer {
             cameraRight: right,
             cameraUp: up,
 
-            gaussianKernelCorrectionPower:
+            correctionPower:
                 this.experimentState.rayMarchingConfig.correctionPower,
-            gaussianKernelCorrectionLinear:
+            correctionLinear:
                 this.experimentState.rayMarchingConfig.correctionLinear,
             maxDistance: this.experimentState.rayMarchingConfig.maxDistance,
             epsilon: this.experimentState.rayMarchingConfig.epsilon,

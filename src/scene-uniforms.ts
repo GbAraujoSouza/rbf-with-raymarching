@@ -13,8 +13,8 @@ export interface SceneUniformInput {
     cameraRight: Vec3;
     cameraUp: Vec3;
 
-    gaussianKernelCorrectionPower: number;
-    gaussianKernelCorrectionLinear: number;
+    correctionPower: number;
+    correctionLinear: number;
     maxDistance: number;
     epsilon: number;
 
@@ -221,8 +221,8 @@ export class SceneUniforms extends UniformInput {
         this.setVec4(
             uniformData,
             this.uniformSlots.marchParams,
-            input.gaussianKernelCorrectionPower,
-            input.gaussianKernelCorrectionLinear,
+            input.correctionPower,
+            input.correctionLinear,
             input.maxDistance,
             input.epsilon,
         );

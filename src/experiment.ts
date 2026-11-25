@@ -2,10 +2,9 @@ import { RbfKernel, type RbfFitConfig } from "./rbf";
 
 export enum StepStrategy {
     "naive" = 0,
-    "exponentialCorrection" = 1,
-    "gradient" = 2,
-    "cellLocalLipschitz" = 3,
-    "stepTracing" = 4,
+    "gradient" = 1,
+    "cellLocalLipschitz" = 2,
+    "stepTracing" = 3,
 }
 
 export enum RenderMode {
@@ -66,12 +65,12 @@ export const DEFAULT_EXPERIMENT_STATE: ExperimentState = {
         extraPadding: 0,
     },
     rayMarchingConfig: {
-        strategy: StepStrategy.exponentialCorrection,
+        strategy: StepStrategy.naive,
         epsilon: 1e-4,
         maxDistance: 20,
         maxSteps: 255,
-        correctionLinear: 0.9,
-        correctionPower: 0.85,
+        correctionLinear: 1,
+        correctionPower: 1,
         lipschitzGridResolution: 8,
         lipschitzSamplesPerAxis: 3,
     },
