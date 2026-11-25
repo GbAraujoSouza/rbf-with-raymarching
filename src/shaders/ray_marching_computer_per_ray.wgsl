@@ -58,13 +58,24 @@ struct MarchingResult {
     stepCount: u32,
 }
 
+struct CellLocalLipschitzSteps {
+    surface: f32,
+    cellExitDepth: f32,
+}
+
+struct LipschitzCellAxis {
+    coordinate: u32,
+    exitDepth: f32,
+}
+
 const RAY_LANES: u32 = 32u;
 const RAY_MARCHING: u32 = 0u;
 const RAY_HIT: u32 = 1u;
 const RAY_MISS: u32 = 2u;
 const STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ: u32 = 3u;
 const MINIMUM_LIPSCHITZ_BOUND: f32 = 1e-4;
-const GRID_BOUNDARY_TOLERANCE: f32 = 1e-5;
+const DIRECTION_EPSILON: f32 = 1e-8;
+const LARGE_DISTANCE: f32 = 1e30;
 
 struct RayState {
     depth: f32,
@@ -231,49 +242,36 @@ fn lipschitzGridDimensions() -> vec3u {
     return vec3u(sceneUniforms.lipschitzGridDimensions.xyz);
 }
 
-fn lipschitzCellCoordinate(
-    normalizedPosition: f32,
-    dimension: u32,
+fn lipschitzCellAxis(
+    point: f32,
+    rayOrigin: f32,
     rayDirection: f32,
-) -> u32 {
+    depth: f32,
+    boxMin: f32,
+    boxMax: f32,
+    dimension: u32,
+) -> LipschitzCellAxis {
+    let extent = boxMax - boxMin;
+    let cellSize = extent / f32(dimension);
     let scaledPosition =
-        clamp(normalizedPosition, 0.0, 1.0) * f32(dimension);
-    let nearestBoundary = round(scaledPosition);
-    var coordinate = i32(floor(scaledPosition));
-    if (
-        abs(scaledPosition - nearestBoundary) <= GRID_BOUNDARY_TOLERANCE
-    ) {
-        coordinate = i32(nearestBoundary);
-        if (rayDirection < 0.0) {
-            coordinate -= 1;
-        }
+        clamp((point - boxMin) / extent, 0.0, 1.0) * f32(dimension);
+    if (abs(rayDirection) <= DIRECTION_EPSILON) {
+        return LipschitzCellAxis(min(u32(scaledPosition), dimension - 1u), LARGE_DISTANCE);
     }
-    return u32(clamp(coordinate, 0, i32(dimension) - 1));
-}
 
-fn lipschitzCellForPoint(point: vec3f, rayDirection: vec3f) -> vec3u {
-    let dimensions = lipschitzGridDimensions();
-    let boxMin = sceneUniforms.boxMin.xyz;
-    let boxMax = sceneUniforms.boxMax.xyz;
-    let normalizedPosition =
-        (point - boxMin) / (boxMax - boxMin);
-    return vec3u(
-        lipschitzCellCoordinate(
-            normalizedPosition.x,
-            dimensions.x,
-            rayDirection.x,
-        ),
-        lipschitzCellCoordinate(
-            normalizedPosition.y,
-            dimensions.y,
-            rayDirection.y,
-        ),
-        lipschitzCellCoordinate(
-            normalizedPosition.z,
-            dimensions.z,
-            rayDirection.z,
-        ),
-    );
+    // Use the position to find a nearby face, then resolve its side in ray depth.
+    let nearestFace = i32(round(scaledPosition));
+    let invDirection = 1.0 / rayDirection;
+    let facePosition = boxMin + f32(nearestFace) * cellSize;
+    let faceDepth = (facePosition - rayOrigin) * invDirection;
+    let forward = rayDirection > 0.0;
+    let reachedFace = depth >= faceDepth;
+    let upperCell = reachedFace == forward;
+    let coordinate = u32(clamp(nearestFace - select(1, 0, upperCell), 0, i32(dimension) - 1));
+
+    let exitFace = coordinate + select(0u, 1u, forward);
+    let exitPosition = select(boxMin + f32(exitFace) * cellSize, boxMax, exitFace == dimension);
+    return LipschitzCellAxis(coordinate, (exitPosition - rayOrigin) * invDirection);
 }
 
 fn lipschitzCellIndex(cell: vec3u) -> u32 {
@@ -288,6 +286,24 @@ fn localLipschitzBound(cell: vec3u) -> f32 {
         lipschitzValues.values[lipschitzCellIndex(cell)],
         MINIMUM_LIPSCHITZ_BOUND,
     );
+}
+
+fn cellLocalLipschitzSteps(
+    distanceToSurface: f32,
+    point: vec3f,
+    rayOrigin: vec3f,
+    rayDirection: vec3f,
+    depth: f32,
+) -> CellLocalLipschitzSteps {
+    let dimensions = lipschitzGridDimensions();
+    let boxMin = sceneUniforms.boxMin.xyz;
+    let boxMax = sceneUniforms.boxMax.xyz;
+    let x = lipschitzCellAxis(point.x, rayOrigin.x, rayDirection.x, depth, boxMin.x, boxMax.x, dimensions.x);
+    let y = lipschitzCellAxis(point.y, rayOrigin.y, rayDirection.y, depth, boxMin.y, boxMax.y, dimensions.y);
+    let z = lipschitzCellAxis(point.z, rayOrigin.z, rayDirection.z, depth, boxMin.z, boxMax.z, dimensions.z);
+    let cell = vec3u(x.coordinate, y.coordinate, z.coordinate);
+    let surfaceStep = distanceToSurface / localLipschitzBound(cell);
+    return CellLocalLipschitzSteps(surfaceStep, min(x.exitDepth, min(y.exitDepth, z.exitDepth)));
 }
 
 struct RayBoxIntercept {
@@ -349,15 +365,21 @@ fn shortestDistanceToSurface(
         if (lane == 0u) {
             let distanceToSurface = abs(fieldValue);
             var hitSurface = fieldValue < 0.0;
-            var stepDistance = 0.0;
+            var nextDepth: f32;
 
             if (u32(sceneUniforms.stepStrategy) == STEP_STRATEGY_CELL_LOCAL_LIPSCHITZ) {
-                let cell = lipschitzCellForPoint(point, localRayDirection);
-                let surfaceStep = distanceToSurface / localLipschitzBound(cell);
-                hitSurface = hitSurface || surfaceStep <= epsilon;
-                stepDistance = surfaceStep;
+                let lipschitzSteps = cellLocalLipschitzSteps(
+                    distanceToSurface,
+                    point,
+                    localRayOrigin,
+                    localRayDirection,
+                    state.depth,
+                );
+
+                hitSurface = hitSurface || lipschitzSteps.surface <= epsilon;
+                nextDepth = min(state.depth + lipschitzSteps.surface, lipschitzSteps.cellExitDepth);
             } else {
-                stepDistance = max(calculateStep(distanceToSurface, point), epsilon);
+                nextDepth = state.depth + max(calculateStep(distanceToSurface, point), epsilon);
             }
 
             sharedRayState.stepCount += 1u;
@@ -365,7 +387,7 @@ fn shortestDistanceToSurface(
                 sharedRayState.distance = sharedRayState.depth;
                 sharedRayState.status = RAY_HIT;
             } else {
-                sharedRayState.depth += stepDistance;
+                sharedRayState.depth = nextDepth;
                 if (sharedRayState.depth >= endDepth || sharedRayState.stepCount >= maxSteps) {
                     sharedRayState.status = RAY_MISS;
                 }
@@ -445,7 +467,22 @@ fn main(
     );
 
     if (result.distance >= sceneUniforms.maxDistance) {
-        textureStore(screenTexture, screenPos, vec4f(0.8118, 0.9333, 1.0, 1.0));
+        let a = 0.5 * rayDirection.y + 1.0;
+        //let gradientColor = (1.0 - a)*vec4f(0.984, 0.894, 0.871, 1.0) + a*vec4f(0.820, 0.812, 0.847, 1.0);
+
+        let topColor = vec3f(0.820, 0.812, 0.847);
+        let middleColor = vec3f(0.914, 0.859, 0.859);
+        let bottomColor = vec3f(0.984, 0.894, 0.871);
+
+        let t = clamp(uv.y, 0.0, 1.0);
+
+        var gradientColor: vec3f;
+        if (t < 0.4) {
+            gradientColor = mix(topColor, middleColor, t / 0.4);
+        }
+
+        gradientColor = mix(middleColor, bottomColor, (t - 0.4) / 0.6);
+        textureStore(screenTexture, screenPos, vec4f(gradientColor, 1.0));
         return;
     }
 
